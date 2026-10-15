@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invernadero</title>
+    <!--Icono de la aplicacion Web-->
+    <link rel="shortcut icon" href="img/lechuga.png" type="image/x-icon">
+    <!--FontAwesome-->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta2/css/all.min.css">
+    <!--Font owswel-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@200;300;400&display=swap" rel="stylesheet">
+    <!--Custom CSS (mio)-->
+    <link rel="stylesheet" href="stylesINV.css">
+</head>
+<body>
+    <header class="titulo">
+        <h1>INVERNADERO</h1>
+    </header>
+    <div class="contenedor">
+        <nav class="navegacion">
+            <img src="img/DSM.jpg" alt="logo" class="logo_nav">
+            <ul class="menu">
+                <li>
+                    <a href="camaraC1.html">Gráficas C1</a>
+                </li>
+                <li>
+                    <a href="index.html">Gráficas C2</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    <div class="tabla">
+        <table>
+            <tr>
+                <td colspan="2">
+                    <h1>Variables ambientales</h1>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/charts/1?bgcolor=%23+CCEEFF+-&color=%23FF0000&dynamic=true&results=30&title=Temperature&type=line&xaxis=Tiempo&yaxis=temperatura+%28%C2%BAC%29"></iframe>
+                </td>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/charts/2?bgcolor=%23ffffff&color=%230000FF&dynamic=true&results=30&title=Relative+Humidity&type=line&xaxis=Tiempo&yaxis=Relative+Humidity+%28%25HR%29"></iframe>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/charts/3?bgcolor=%23ffffff&color=%239b9b9b&dynamic=true&results=30&title=Carbon+Dioxide&type=line&xaxis=Tiempo&yaxis=ppm+CO2"></iframe>
+                </td>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/charts/4?bgcolor=%23ffffff&color=%23ff0080&dynamic=true&results=30&title=Photosynthetic+Photon+Flux&type=line&xaxis=Tiempo&yaxis=PPF+%28umol%2Am%5E-2%2As%5E-1%29"></iframe>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/charts/5?bgcolor=%23ffffff&color=%232271B3&dynamic=true&results=30&title=Wind+speed&type=line&xaxis=Tiempo&yaxis=m%2Fs"></iframe>
+                </td>
+                <td>
+                    <iframe src="https://thingspeak.mathworks.com/channels/2085736/maps/channel_show"></iframe>
+                </td>
+            </tr>
+        </table>
+    </div>
+    <section class="social">
+        <p>Follow us!</p>
+        <div class="links">
+            <a href="https://www.facebook.com/dsmecatronicos4">
+                <i class="fab fa-facebook-f"></i>
+            </a>
+            <a href="https://www.tiktok.com/@dsm4.0">
+                <i class="fa-brands fa-tiktok"></i>
+            </a>
+        </div>
+    </section>
+    <footer class="pie">
+        Diseño de Sistemas Mecatronicos 4.0
+    </footer>
+</body>    
+</html>

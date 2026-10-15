@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // La marca de tiempo debe ser exactamente la hora del servidor
+    // (FieldValue.serverTimestamp()); se rechaza cualquier hora enviada por el cliente.
+    function usesServerTime(field) {
+      return request.resource.data[field] == request.time;
+    }
+
+    // Las marcas de tiempo ya guardadas no se pueden alterar
+    function keepsTime(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+
+    match /reservas/{id} {
+      allow read:   if isOwner(resource.data.id_usuario);
+      allow create: if isOwner(request.resource.data.id_usuario)
+                    && usesServerTime('fecha_creacion');
+      allow update: if isOwner(resource.data.id_usuario)
+                    && keepsTime('fecha_creacion')
+                    && request.resource.data.id_usuario == resource.data.id_usuario;
+      allow delete: if isOwner(resource.data.id_usuario);
+    }
+
+    match /vehiculos/{id} {
+      allow read, delete: if isOwner(resource.data.id_usuario);
+      allow create: if isOwner(request.resource.data.id_usuario)
+                    && usesServerTime('fecha_registro');
+      allow update: if isOwner(resource.data.id_usuario)
+                    && keepsTime('fecha_registro')
+                    && request.resource.data.id_usuario == resource.data.id_usuario;
+    }
+
+    // Documento usado por App.syncServerClock() para medir el desfase del reloj
+    match /sincronizacion/{uid} {
+      allow read:  if isOwner(uid);
+      allow write: if isOwner(uid)
+                   && request.resource.data.keys().hasOnly(['hora_servidor'])
+                   && usesServerTime('hora_servidor');
+    }
+  }
+}

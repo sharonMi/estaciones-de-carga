@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cámara de crecimiento C1</title>
+    <!--Icono de la aplicacion Web-->
+    <link rel="shortcut icon" href="img/lechuga.png" type="image/x-icon">
+    <!--FontAwesome-->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta2/css/all.min.css">
+    <!--Font owswel-->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@200;300;400&display=swap" rel="stylesheet">
+    <!--Custom CSS (mio)-->
+    <link rel="stylesheet" href="stylesC1.css">
+</head>
+<body>
+    <header class="titulo">
+        <h1>Cámara de crecimiento C1</h1>
+    </header>
+    <div class="contenedor">
+        <nav class="navegacion">
+            <img src="img/DSM.jpg" alt="logo" class="logo_nav">
+            <ul class="menu">
+                <li>
+                    <a href="camaraC1.html">Gráficas C1</a>
+                </li>
+                <li>
+                    <a href="variablesC1.html">Pantalla C1</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    <div class="tabla">
+        <table>
+            <tr>
+                <td colspan="2">
+                    <h1>Set Points actuales</h1>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <h2>Humedad máxima</h2>    
+                    <p><span id="HM">xxxx</span></p>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <h2>Hora de encendido actual de las lámparas</h2>    
+                    <p><span id="HE">xxxx</span></p>
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <h2>Hora de apagado actual de las lámparas</h2>    
+                    <p><span id="HA">xxxx</span></p>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <h1>Nuevo Set Point</h1>
+                    <label for="apiKey">API Key:</label>
+                    <input type="text" id="apiKey" placeholder="Ingresa la API Key">
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <label for="HumMax">Humedad Máxima:</label>
+                    <input type="text" id="Hum_Max" placeholder="Humedad">
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <label for="horaEncendido">Hora de encendido:</label>
+                    <input type="text" id="horaEncendido" placeholder="HH">
+                    <label for="minutoEncendido">Minuto de encendido:</label>
+                    <input type="text" id="minutoEncendido" placeholder="MM">
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <label for="horaApagado">Hora de apagado:</label>
+                    <input type="text" id="horaApagado" placeholder="HH">
+                    <label for="minutoApagado">Minuto de apagado:</label>
+                    <input type="text" id="minutoApagado" placeholder="MM">
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <button onclick="sendData()">Enviar</button>
+                </td>
+            </tr>
+        </table>
+    </div>
+    <section class="social">
+        <p>Follow us!</p>
+        <div class="links">
+            <a href="https://www.facebook.com/dsmecatronicos4">
+                <i class="fab fa-facebook-f"></i>
+            </a>
+            <a href="https://www.tiktok.com/@dsm4.0">
+                <i class="fa-brands fa-tiktok"></i>
+            </a>
+        </div>
+    </section>
+    <footer class="pie">
+        Diseño de Sistemas Mecatronicos 4.0
+    </footer>
+    <script src="SPC1.js"></script>
+</body>    
+</html>

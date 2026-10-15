@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMCE - Iniciar Sesión</title>
+    <link rel="shortcut icon" href="img/simce.jpg" type="image/jpeg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-card">
+            <div class="login-logos">
+                <img src="img/institucional.png" alt="TecNM — IT Celaya" class="login-logo-combined">
+            </div>
+            <div class="login-icon">
+                <img src="img/simce.jpg" alt="SIMCE" class="login-logo-main">
+            </div>
+            <h1>SIMCE</h1>
+            <p>Sistema Inteligente de Monitoreo de Carga para vehículos Eléctricos ligeros</p>
+            <div class="login-error" id="loginError"></div>
+            <button type="button" id="googleBtn" class="btn btn-primary" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;font-size:1rem;padding:14px 20px;">
+                <i class="fab fa-google"></i> Continuar con Google
+            </button>
+            <div class="login-footer">
+                <span>Proyecto EvoBike — IT Celaya</span>
+            </div>
+        </div>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script>
+        fbAuth.onAuthStateChanged(function(user) {
+            if (user) window.location.href = 'index.html';
+        });
+
+        document.getElementById('googleBtn').addEventListener('click', function() {
+            var btn = document.getElementById('googleBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Iniciando sesión...';
+
+            fbAuth.signInWithPopup(googleProvider)
+                .then(function() {
+                    window.location.href = 'index.html';
+                })
+                .catch(function(err) {
+                    var errEl = document.getElementById('loginError');
+                    errEl.textContent = 'Error: ' + err.message;
+                    errEl.style.display = 'block';
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fab fa-google"></i> Continuar con Google';
+                });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMCE - Dashboard</title>
+    <link rel="shortcut icon" href="img/simce.jpg" type="image/jpeg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="overlay"></div>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <img src="img/simce.jpg" alt="SIMCE" class="sidebar-logo">
+                <div><h2>SIMCE</h2><span>EvoBike — IT Celaya</span></div>
+            </div>
+            <ul class="sidebar-nav">
+                <li><a href="index.html" data-page="dashboard"><i class="fas fa-th-large"></i> Dashboard</a></li>
+                <li><a href="reservar.html" data-page="reservar"><i class="fas fa-calendar-check"></i> Reservar</a></li>
+                <li><a href="historial.html" data-page="historial"><i class="fas fa-history"></i> Historial</a></li>
+                <li><a href="monitoreo.html" data-page="monitoreo"><i class="fas fa-chart-line"></i> Monitoreo</a></li>
+            </ul>
+            <div class="sidebar-user">
+                <div class="avatar">U</div>
+                <div class="user-info"><strong>Usuario</strong><small>En línea</small></div>
+                <button class="logout-btn" title="Cerrar sesión"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="topbar">
+                <button class="menu-toggle"><i class="fas fa-bars"></i></button>
+                <h1>Dashboard</h1>
+                <div class="topbar-right"><span class="date-display"></span></div>
+            </header>
+            <div class="content">
+                <div class="stats-grid" id="statsGrid"></div>
+                <div class="solar-section" id="solarSection">
+                    <div class="solar-header">
+                        <h3><i class="fas fa-solar-panel"></i> Energía Solar — Paneles Fotovoltaicos</h3>
+                        <span class="badge badge-available">Activo</span>
+                    </div>
+                    <div class="solar-grid" id="solarGrid"></div>
+                </div>
+
+                <h2 class="section-title"><i class="fas fa-plug"></i> Estaciones de Carga</h2>
+                <div class="stations-grid" id="stationsGrid"></div>
+                <h2 class="section-title"><i class="fas fa-calendar"></i> Próximas Reservaciones</h2>
+                <div id="upcomingRes"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="app.js?v=6"></script>
+    <script>
+    App.initUI('dashboard').then(function(ready) {
+        if (!ready) return;
+
+        var stations = App.getStations();
+        var active   = stations.filter(function(s){ return s.status === 'charging'; }).length;
+        var avail    = stations.filter(function(s){ return s.status === 'available'; }).length;
+        var totalE   = stations.reduce(function(sum, s){ return sum + s.pzem.energy; }, 0);
+
+        function renderStats(pending) {
+            document.getElementById('statsGrid').innerHTML =
+                '<div class="stat-card"><div class="stat-header"><span class="stat-label">Estaciones Activas</span><i class="fas fa-bolt icon-blue"></i></div><div class="stat-value">'+ active +'</div><div class="stat-label">de '+ stations.length +' estaciones</div></div>' +
+                '<div class="stat-card"><div class="stat-header"><span class="stat-label">Disponibles</span><i class="fas fa-check-circle icon-green"></i></div><div class="stat-value">'+ avail +'</div><div class="stat-label">listas para cargar</div></div>' +
+                '<div class="stat-card"><div class="stat-header"><span class="stat-label">Energía Total</span><i class="fas fa-fire icon-yellow"></i></div><div class="stat-value">'+ totalE.toFixed(1) +'</div><div class="stat-label">kWh consumidos hoy</div></div>' +
+                '<div class="stat-card"><div class="stat-header"><span class="stat-label">Reservaciones</span><i class="fas fa-calendar-check icon-red"></i></div><div class="stat-value">'+ pending +'</div><div class="stat-label">pendientes</div></div>';
+        }
+        renderStats('…');
+
+        var statusMap = {
+            charging:  { badge: 'badge-charging',  text: 'Cargando'        },
+            available: { badge: 'badge-available',  text: 'Disponible'      },
+            reserved:  { badge: 'badge-reserved',   text: 'Reservada'       },
+            offline:   { badge: 'badge-offline',    text: 'Fuera de línea'  }
+        };
+
+        document.getElementById('stationsGrid').innerHTML = stations.map(function(s) {
+            var st = statusMap[s.status];
+            var vehicleHtml = s.vehicle
+                ? '<div class="station-vehicle"><i class="fas fa-car"></i> ' + s.vehicle.brand + ' — Batería: ' + s.vehicle.currentCharge + '% de ' + s.vehicle.battery + ' kWh</div>'
+                : '';
+            var actionHtml = s.status === 'available'
+                ? '<a href="reservar.html?station=' + s.id + '" class="btn btn-primary">Reservar</a>'
+                : '<a href="monitoreo.html" class="btn btn-outline">Ver detalles</a>';
+            return '<div class="station-card">' +
+                '<div class="station-header"><span class="station-name"><i class="fas fa-plug"></i> ' + s.name + '</span><span class="badge ' + st.badge + '">' + st.text + '</span></div>' +
+                '<div class="station-metrics">' +
+                    '<div class="metric"><div class="metric-label">Voltaje</div><div class="metric-value">'   + s.pzem.voltage.toFixed(1) + ' <span class="pzem-unit">V</span></div></div>'   +
+                    '<div class="metric"><div class="metric-label">Corriente</div><div class="metric-value">' + s.pzem.current.toFixed(1) + ' <span class="pzem-unit">A</span></div></div>'   +
+                    '<div class="metric"><div class="metric-label">Potencia</div><div class="metric-value">'  + s.pzem.power.toFixed(0)   + ' <span class="pzem-unit">W</span></div></div>'   +
+                    '<div class="metric"><div class="metric-label">Energía</div><div class="metric-value">'   + s.pzem.energy.toFixed(1)  + ' <span class="pzem-unit">kWh</span></div></div>' +
+                '</div>' + vehicleHtml +
+                '<div class="station-actions">' + actionHtml + '</div></div>';
+        }).join('');
+
+        var chargeHistory  = App.getHistory();
+        var totalSolarKwh  = chargeHistory.reduce(function(s, h) { return s + h.energyConsumed; }, 0);
+        var moneySaved     = totalSolarKwh * 3.80;
+        var co2Avoided     = totalSolarKwh * 0.423;
+        document.getElementById('solarGrid').innerHTML =
+            '<div class="solar-item solar-sun"><i class="fas fa-sun"></i><div class="solar-value">' + totalSolarKwh.toFixed(1) + ' <span class="pzem-unit">kWh</span></div><div class="solar-label">Energía Solar Generada</div></div>' +
+            '<div class="solar-item solar-save"><i class="fas fa-piggy-bank"></i><div class="solar-value">$' + moneySaved.toFixed(0) + ' <span class="pzem-unit">MXN</span></div><div class="solar-label">Ahorro vs Red Eléctrica</div></div>' +
+            '<div class="solar-item solar-co2"><i class="fas fa-leaf"></i><div class="solar-value">' + co2Avoided.toFixed(1) + ' <span class="pzem-unit">kg</span></div><div class="solar-label">CO₂ Evitado</div></div>' +
+            '<div class="solar-item solar-pct"><i class="fas fa-percentage"></i><div class="solar-value">100<span class="pzem-unit">%</span></div><div class="solar-label">Energía Renovable</div></div>';
+
+        // Reservaciones desde Firestore
+        App.getReservationsAsync().then(function(reservations) {
+            renderStats(reservations.length);
+            if (reservations.length) {
+                document.getElementById('upcomingRes').innerHTML = reservations.map(function(r) {
+                    return '<div class="reservation-item">' +
+                        '<div class="res-info"><div class="res-station">E' + r.stationId + '</div>' +
+                        '<div class="res-details"><h4>' + r.vehicleBrand + ' — Estación ' + r.stationId + '</h4>' +
+                        '<p><i class="fas fa-calendar"></i> ' + App.formatDate(r.date) + ' · ' + r.startTime + ' - ' + r.endTime + '</p></div></div>' +
+                        '<span class="badge badge-reserved">Pendiente</span></div>';
+                }).join('');
+            } else {
+                document.getElementById('upcomingRes').innerHTML = '<div class="empty-state"><i class="fas fa-calendar-check"></i><p>No hay reservaciones pendientes</p></div>';
+            }
+        }).catch(function() {});
+
+        // Datos en tiempo real desde ThingSpeak
+        var cards = document.querySelectorAll('.station-card');
+        App.STATIONS.forEach(function(cfg, idx) {
+            fetch(App.tsFeedUrl(cfg.id))
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var card = cards[idx];
+                    if (!card) return;
+                    var metrics = card.querySelectorAll('.metric-value');
+                    if (metrics.length >= 4) {
+                        metrics[0].innerHTML = (parseFloat(d.field1)||0).toFixed(1) + ' <span class="pzem-unit">V</span>';
+                        metrics[1].innerHTML = (parseFloat(d.field2)||0).toFixed(3) + ' <span class="pzem-unit">A</span>';
+                        metrics[2].innerHTML = (parseFloat(d.field3)||0).toFixed(1) + ' <span class="pzem-unit">W</span>';
+                        metrics[3].innerHTML = (parseFloat(d.field4)||0).toFixed(3) + ' <span class="pzem-unit">kWh</span>';
+                    }
+                    var badge = card.querySelector('.badge');
+                    if (badge && parseFloat(d.field2) > 0.5) {
+                        badge.className = 'badge badge-charging';
+                        badge.textContent = 'CARGANDO';
+                    } else if (badge) {
+                        badge.className = 'badge badge-available';
+                        badge.textContent = 'DISPONIBLE';
+                    }
+                })
+                .catch(function() {});
+        });
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+# IDEs
+.idea/
+.vscode/
+.claude/
+
+# Firebase
+.firebase/
+firebase-debug.log
+.firebaserc.local
+
+# Sistema
+.DS_Store
+Thumbs.db

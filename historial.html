@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMCE - Historial</title>
+    <link rel="shortcut icon" href="img/simce.jpg" type="image/jpeg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="overlay"></div>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <img src="img/simce.jpg" alt="SIMCE" class="sidebar-logo">
+                <div><h2>SIMCE</h2><span>EvoBike — IT Celaya</span></div>
+            </div>
+            <ul class="sidebar-nav">
+                <li><a href="index.html" data-page="dashboard"><i class="fas fa-th-large"></i> Dashboard</a></li>
+                <li><a href="reservar.html" data-page="reservar"><i class="fas fa-calendar-check"></i> Reservar</a></li>
+                <li><a href="historial.html" data-page="historial"><i class="fas fa-history"></i> Historial</a></li>
+                <li><a href="monitoreo.html" data-page="monitoreo"><i class="fas fa-chart-line"></i> Monitoreo</a></li>
+            </ul>
+            <div class="sidebar-user">
+                <div class="avatar">U</div>
+                <div class="user-info"><strong>Usuario</strong><small>En línea</small></div>
+                <button class="logout-btn" title="Cerrar sesión"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="topbar">
+                <button class="menu-toggle"><i class="fas fa-bars"></i></button>
+                <h1>Historial de Cargas</h1>
+                <div class="topbar-right"><span class="date-display"></span></div>
+            </header>
+            <div class="content">
+                <div class="stats-grid" id="histStats"></div>
+
+                <div class="filters-bar">
+                    <div class="form-group">
+                        <label>Estación</label>
+                        <select id="filterStation">
+                            <option value="">Todas</option>
+                            <option value="1">Estación 1</option>
+                            <option value="2">Estación 2</option>
+                            <option value="3">Estación 3</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Desde</label>
+                        <input type="date" id="filterFrom">
+                    </div>
+                    <div class="form-group">
+                        <label>Hasta</label>
+                        <input type="date" id="filterTo">
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-outline btn-sm" onclick="applyFilters()"><i class="fas fa-filter"></i> Filtrar</button>
+                    </div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Estación</th>
+                                <th>Vehículo</th>
+                                <th>Inicio</th>
+                                <th>Fin</th>
+                                <th>Batería (inicio→fin)</th>
+                                <th>Vehículo guardado</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="histBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="app.js?v=6"></script>
+    <script>
+    var allReservations = [];
+
+    var estadoBadge = {
+        pendiente:  '<span class="badge badge-reserved">Pendiente</span>',
+        cancelada:  '<span class="badge badge-offline">Cancelada</span>',
+        completada: '<span class="badge badge-available">Completada</span>'
+    };
+
+    App.initUI('historial').then(function(ready) {
+        if (!ready) return;
+
+        App.getAllReservationsAsync().then(function(data) {
+            allReservations = data;
+            applyFilters();
+        }).catch(function(err) {
+            document.getElementById('histBody').innerHTML =
+                '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">Error al cargar datos: ' + err.message + '</td></tr>';
+        });
+
+        document.getElementById('filterStation').addEventListener('change', applyFilters);
+        document.getElementById('filterFrom').addEventListener('change', applyFilters);
+        document.getElementById('filterTo').addEventListener('change', applyFilters);
+    });
+
+    function applyFilters() {
+        var data = allReservations.slice();
+        var st   = document.getElementById('filterStation').value;
+        var from = document.getElementById('filterFrom').value;
+        var to   = document.getElementById('filterTo').value;
+
+        if (st)   data = data.filter(function(r) { return r.stationId === parseInt(st); });
+        if (from) data = data.filter(function(r) { return r.date >= from; });
+        if (to)   data = data.filter(function(r) { return r.date <= to; });
+
+        renderHistory(data);
+    }
+
+    function renderHistory(data) {
+        var pendientes  = data.filter(function(r) { return r.estado === 'pendiente'; }).length;
+        var completadas = data.filter(function(r) { return r.estado === 'completada'; }).length;
+        var canceladas  = data.filter(function(r) { return r.estado === 'cancelada'; }).length;
+
+        document.getElementById('histStats').innerHTML =
+            '<div class="stat-card"><div class="stat-header"><span class="stat-label">Total Registros</span><i class="fas fa-hashtag icon-blue"></i></div><div class="stat-value">' + data.length + '</div></div>' +
+            '<div class="stat-card"><div class="stat-header"><span class="stat-label">Pendientes</span><i class="fas fa-clock icon-yellow"></i></div><div class="stat-value">' + pendientes + '</div></div>' +
+            '<div class="stat-card"><div class="stat-header"><span class="stat-label">Completadas</span><i class="fas fa-check-circle icon-green"></i></div><div class="stat-value">' + completadas + '</div></div>' +
+            '<div class="stat-card"><div class="stat-header"><span class="stat-label">Canceladas</span><i class="fas fa-times-circle icon-red"></i></div><div class="stat-value">' + canceladas + '</div></div>';
+
+        if (!data.length) {
+            document.getElementById('histBody').innerHTML =
+                '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">No hay registros con estos filtros</td></tr>';
+            return;
+        }
+
+        document.getElementById('histBody').innerHTML = data.map(function(r) {
+            var badge = estadoBadge[r.estado] || '<span class="badge">' + r.estado + '</span>';
+            var saved = r.alias_vehiculo ? '<i class="fas fa-car"></i> ' + r.alias_vehiculo : '—';
+            return '<tr>' +
+                '<td>' + App.formatDate(r.date) + '</td>' +
+                '<td>Estación ' + r.stationId + '</td>' +
+                '<td>' + r.vehicleBrand + '</td>' +
+                '<td>' + r.startTime + '</td>' +
+                '<td>' + r.endTime + '</td>' +
+                '<td>' + r.currentCharge + '% → ' + r.targetCharge + '%</td>' +
+                '<td>' + saved + '</td>' +
+                '<td>' + badge + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+    </script>
+</body>
+</html>

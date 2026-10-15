@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIMCE - Reservar</title>
+    <link rel="shortcut icon" href="img/simce.jpg" type="image/jpeg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="overlay"></div>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <img src="img/simce.jpg" alt="SIMCE" class="sidebar-logo">
+                <div><h2>SIMCE</h2><span>EvoBike — IT Celaya</span></div>
+            </div>
+            <ul class="sidebar-nav">
+                <li><a href="index.html" data-page="dashboard"><i class="fas fa-th-large"></i> Dashboard</a></li>
+                <li><a href="reservar.html" data-page="reservar"><i class="fas fa-calendar-check"></i> Reservar</a></li>
+                <li><a href="historial.html" data-page="historial"><i class="fas fa-history"></i> Historial</a></li>
+                <li><a href="monitoreo.html" data-page="monitoreo"><i class="fas fa-chart-line"></i> Monitoreo</a></li>
+            </ul>
+            <div class="sidebar-user">
+                <div class="avatar">U</div>
+                <div class="user-info"><strong>Usuario</strong><small>En línea</small></div>
+                <button class="logout-btn" title="Cerrar sesión"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="topbar">
+                <button class="menu-toggle"><i class="fas fa-bars"></i></button>
+                <h1>Reservar Estación</h1>
+                <div class="topbar-right"><span class="date-display"></span></div>
+            </header>
+            <div class="content">
+                <div id="alertBox"></div>
+
+                <div class="reservation-form">
+                    <h2 class="section-title"><i class="fas fa-calendar-plus"></i> Nueva Reservación</h2>
+                    <form id="resForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="station">Estación</label>
+                                <select id="station" required>
+                                    <option value="">Selecciona estación</option>
+                                    <option value="1">Estación 1</option>
+                                    <option value="2">Estación 2</option>
+                                    <option value="3">Estación 3</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="date">Fecha</label>
+                                <input type="date" id="date" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="startTime">Hora de inicio</label>
+                                <input type="time" id="startTime" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="endTime">Hora de fin</label>
+                                <input type="time" id="endTime" required>
+                            </div>
+                        </div>
+
+                        <hr class="form-divider">
+
+                        <!-- ── Selector de vehículo integrado ── -->
+                        <div class="form-group" style="margin-bottom:10px;">
+                            <label>Vehículo</label>
+                            <div style="display:flex;gap:8px;margin-top:6px;">
+                                <button type="button" class="btn btn-primary btn-sm" id="tabRegistrado"><i class="fas fa-car"></i> Registrado</button>
+                                <button type="button" class="btn btn-outline btn-sm" id="tabNuevo"><i class="fas fa-plus"></i> Nuevo vehículo</button>
+                            </div>
+                        </div>
+
+                        <!-- Panel: vehículo guardado -->
+                        <div id="panelRegistrado" style="margin-bottom:14px;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="vehicleSelect">Selecciona tu vehículo</label>
+                                    <select id="vehicleSelect">
+                                        <option value="">Cargando vehículos...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="vehicleInfoBanner"></div>
+                        </div>
+
+                        <!-- Panel: nuevo vehículo -->
+                        <div id="panelNuevo" style="display:none;margin-bottom:14px;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="vehicleType">Tipo de vehículo</label>
+                                    <select id="vehicleType">
+                                        <option value="">Selecciona tipo</option>
+                                        <option value="Motocicleta">Motocicleta eléctrica</option>
+                                        <option value="Patín eléctrico">Patín eléctrico</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="vehicleBrand">Marca / Modelo</label>
+                                    <input type="text" id="vehicleBrand" placeholder="Ej: NIU NQi GT, Xiaomi Pro 2">
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom:6px;">
+                                <label style="display:flex;align-items:center;gap:8px;font-weight:normal;cursor:pointer;">
+                                    <input type="checkbox" id="saveVehicleCheck">
+                                    Guardar este vehículo para próximas reservas
+                                </label>
+                            </div>
+                            <div id="aliasGroup" class="form-group" style="display:none;">
+                                <label for="vAliasInline">Alias del vehículo</label>
+                                <input type="text" id="vAliasInline" placeholder="Ej: Mi moto azul">
+                            </div>
+                        </div>
+
+                        <hr class="form-divider">
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="battery">Capacidad de batería (kWh)</label>
+                                <input type="number" id="battery" min="0.1" max="20" step="0.01" placeholder="Ej: 3.5 (moto) o 0.47 (patín)" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="currentCharge">Carga actual (%)</label>
+                                <input type="number" id="currentCharge" min="0" max="100" step="1" placeholder="Ej: 20" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="targetCharge">Carga objetivo (%)</label>
+                                <input type="number" id="targetCharge" min="1" max="100" step="1" value="80" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="chargerPower">Potencia del cargador (kW)</label>
+                                <input type="number" id="chargerPower" min="0.1" max="10" step="0.1" value="1.5">
+                            </div>
+                        </div>
+
+                        <div class="charge-estimate" id="estimate" style="display:none;">
+                            <h4><i class="fas fa-clock"></i> Tiempo estimado de carga</h4>
+                            <div class="estimate-value" id="estTime">—</div>
+                            <div class="estimate-detail" id="estDetail"></div>
+                        </div>
+
+                        <div style="margin-top:20px;">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Confirmar Reservación</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div style="margin-top:32px;">
+                    <h2 class="section-title"><i class="fas fa-list"></i> Reservaciones Activas</h2>
+                    <div id="resList"></div>
+                </div>
+
+                <!-- ── Gestionar vehículos ── -->
+                <div style="margin-top:24px;">
+                    <button type="button" class="btn btn-outline btn-sm" id="toggleManagerBtn">
+                        <i class="fas fa-cog"></i> Gestionar mis vehículos ▾
+                    </button>
+                    <div id="vehicleManagerPanel" style="display:none;margin-top:12px;">
+                        <div id="vehiculosList"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="app.js?v=6"></script>
+    <script>
+    App.initUI('reservar').then(function(ready) {
+        if (!ready) return;
+
+        var selectedVehicle = null;
+        var activeTab = 'registrado';
+
+        // ── Tabs de vehículo ──────────────────────────────────
+
+        function switchVehicleTab(tab) {
+            activeTab = tab;
+            var isReg = tab === 'registrado';
+            document.getElementById('panelRegistrado').style.display = isReg ? 'block' : 'none';
+            document.getElementById('panelNuevo').style.display      = isReg ? 'none'  : 'block';
+            document.getElementById('tabRegistrado').className = isReg ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+            document.getElementById('tabNuevo').className      = isReg ? 'btn btn-outline btn-sm' : 'btn btn-primary btn-sm';
+            if (!isReg) { selectedVehicle = null; document.getElementById('battery').readOnly = false; }
+            updateEstimate();
+        }
+
+        document.getElementById('tabRegistrado').addEventListener('click', function() { switchVehicleTab('registrado'); });
+        document.getElementById('tabNuevo').addEventListener('click',      function() { switchVehicleTab('nuevo'); });
+
+        // ── Dropdown de vehículos registrados ─────────────────
+
+        function loadVehicleDropdown() {
+            App.getVehiclesAsync().then(function(vehicles) {
+                var sel = document.getElementById('vehicleSelect');
+                if (!vehicles.length) {
+                    sel.innerHTML = '<option value="">Sin vehículos — usa "Nuevo vehículo" para agregar uno</option>';
+                    return;
+                }
+                sel.innerHTML = '<option value="">Selecciona un vehículo…</option>' +
+                    vehicles.map(function(v) {
+                        return '<option value="' + v.id + '" ' +
+                            'data-tipo="' + v.tipo + '" ' +
+                            'data-marca="' + v.marca.replace(/"/g,'&quot;') + '" ' +
+                            'data-cap="' + v.capacidad_bateria + '" ' +
+                            'data-alias="' + v.alias.replace(/"/g,'&quot;') + '">' +
+                            v.alias + ' — ' + v.marca + ' (' + v.capacidad_bateria + ' kWh)' +
+                            '</option>';
+                    }).join('');
+                // Re-select if one was active
+                if (selectedVehicle) sel.value = selectedVehicle.id;
+            });
+        }
+
+        document.getElementById('vehicleSelect').addEventListener('change', function() {
+            var opt = this.options[this.selectedIndex];
+            if (!opt.value) {
+                selectedVehicle = null;
+                document.getElementById('vehicleInfoBanner').innerHTML = '';
+                document.getElementById('battery').value    = '';
+                document.getElementById('battery').readOnly = false;
+                updateEstimate();
+                return;
+            }
+            selectedVehicle = {
+                id:               opt.value,
+                alias:            opt.getAttribute('data-alias'),
+                tipo:             opt.getAttribute('data-tipo'),
+                marca:            opt.getAttribute('data-marca'),
+                capacidad_bateria: parseFloat(opt.getAttribute('data-cap'))
+            };
+            document.getElementById('battery').value    = selectedVehicle.capacidad_bateria;
+            document.getElementById('battery').readOnly = true;
+            document.getElementById('vehicleInfoBanner').innerHTML =
+                '<div class="alert alert-info" style="padding:8px 12px;margin:8px 0 0;font-size:0.875rem;">' +
+                '<i class="fas fa-info-circle"></i> ' +
+                selectedVehicle.tipo + ' · ' + selectedVehicle.marca + ' · ' + selectedVehicle.capacidad_bateria + ' kWh</div>';
+            updateEstimate();
+        });
+
+        // ── Checkbox "guardar vehículo" ───────────────────────
+
+        document.getElementById('saveVehicleCheck').addEventListener('change', function() {
+            document.getElementById('aliasGroup').style.display = this.checked ? 'block' : 'none';
+        });
+
+        // ── Gestionar vehículos (collapsible) ─────────────────
+
+        document.getElementById('toggleManagerBtn').addEventListener('click', function() {
+            var panel = document.getElementById('vehicleManagerPanel');
+            var open  = panel.style.display === 'none';
+            panel.style.display = open ? 'block' : 'none';
+            this.innerHTML = '<i class="fas fa-cog"></i> Gestionar mis vehículos ' + (open ? '▴' : '▾');
+            if (open) loadVehicleManager();
+        });
+
+        function loadVehicleManager() {
+            App.getVehiclesAsync().then(function(vehicles) {
+                var c = document.getElementById('vehiculosList');
+                if (!vehicles.length) {
+                    c.innerHTML = '<p style="color:var(--text-muted,#64748b);padding:8px 0;">No tienes vehículos registrados.</p>';
+                    return;
+                }
+                c.innerHTML = vehicles.map(function(v) {
+                    return '<div class="reservation-item">' +
+                        '<div class="res-info">' +
+                            '<div class="res-station" style="font-size:1rem;"><i class="fas fa-car"></i></div>' +
+                            '<div class="res-details"><h4>' + v.alias + '</h4>' +
+                            '<p>' + v.tipo + ' · ' + v.marca + ' · ' + v.capacidad_bateria + ' kWh</p></div>' +
+                        '</div>' +
+                        '<button class="btn btn-danger btn-sm" onclick="confirmDeleteVehicle(\'' + v.id + '\',\'' + v.alias.replace(/'/g,"\\'") + '\')">' +
+                            '<i class="fas fa-trash"></i> Eliminar</button>' +
+                    '</div>';
+                }).join('');
+            });
+        }
+
+        window.confirmDeleteVehicle = function(id, alias) {
+            if (!confirm('¿Eliminar "' + alias + '" y su historial de reservaciones?')) return;
+            App.deleteVehicleAsync(id).then(function() {
+                if (selectedVehicle && selectedVehicle.id === id) {
+                    selectedVehicle = null;
+                    document.getElementById('vehicleSelect').value = '';
+                    document.getElementById('vehicleInfoBanner').innerHTML = '';
+                    document.getElementById('battery').value    = '';
+                    document.getElementById('battery').readOnly = false;
+                }
+                showAlert('"' + alias + '" eliminado.', 'success');
+                loadVehicleDropdown();
+                loadVehicleManager();
+                renderReservations();
+            }).catch(function(err) { showAlert('Error: ' + err.message, 'warning'); });
+        };
+
+        // ── Formulario de reservación ─────────────────────────
+
+        var preStation = App.getParam('station');
+        if (preStation) document.getElementById('station').value = preStation;
+
+        var today = new Date().toISOString().split('T')[0];
+        document.getElementById('date').value = today;
+        document.getElementById('date').min   = today;
+
+        ['battery', 'currentCharge', 'targetCharge', 'chargerPower'].forEach(function(id) {
+            document.getElementById(id).addEventListener('input', updateEstimate);
+        });
+
+        function updateEstimate() {
+            var cap = parseFloat(document.getElementById('battery').value);
+            var cur = parseFloat(document.getElementById('currentCharge').value);
+            var tar = parseFloat(document.getElementById('targetCharge').value);
+            var pow = parseFloat(document.getElementById('chargerPower').value);
+            var box = document.getElementById('estimate');
+            if (cap > 0 && cur >= 0 && tar > cur && pow > 0) {
+                var hours = App.calculateChargeTime(cap, cur, tar, pow);
+                var kwh   = cap * (tar - cur) / 100;
+                document.getElementById('estTime').textContent   = Math.floor(hours) + 'h ' + Math.round((hours % 1) * 60) + 'min';
+                document.getElementById('estDetail').textContent = 'Energía necesaria: ' + kwh.toFixed(1) + ' kWh · Potencia: ' + pow + ' kW';
+                box.style.display = 'block';
+            } else {
+                box.style.display = 'none';
+            }
+        }
+
+        document.getElementById('resForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            var cur = parseFloat(document.getElementById('currentCharge').value);
+            var tar = parseFloat(document.getElementById('targetCharge').value);
+            if (cur >= tar) { showAlert('La carga objetivo debe ser mayor que la carga actual.', 'warning'); return; }
+
+            var vType, vBrand, vCap;
+            if (activeTab === 'registrado') {
+                if (!selectedVehicle) { showAlert('Selecciona un vehículo o cambia a "Nuevo vehículo".', 'warning'); return; }
+                vType  = selectedVehicle.tipo;
+                vBrand = selectedVehicle.marca;
+                vCap   = selectedVehicle.capacidad_bateria;
+            } else {
+                vType  = document.getElementById('vehicleType').value;
+                vBrand = document.getElementById('vehicleBrand').value.trim();
+                vCap   = parseFloat(document.getElementById('battery').value);
+                if (!vType || !vBrand || !vCap) { showAlert('Completa los datos del vehículo.', 'warning'); return; }
+            }
+
+            var submitBtn = document.querySelector('#resForm button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+            var saveNew  = activeTab === 'nuevo' && document.getElementById('saveVehicleCheck').checked;
+            var newAlias = saveNew ? document.getElementById('vAliasInline').value.trim() : '';
+
+            function doReserve(vehiculoId, vehiculoAlias) {
+                var r = {
+                    stationId:       parseInt(document.getElementById('station').value),
+                    date:            document.getElementById('date').value,
+                    startTime:       document.getElementById('startTime').value,
+                    endTime:         document.getElementById('endTime').value,
+                    vehicleType:     vType,
+                    vehicleBrand:    vBrand,
+                    batteryCapacity: vCap,
+                    currentCharge:   cur,
+                    targetCharge:    tar,
+                    estimatedHours:  App.calculateChargeTime(vCap, cur, tar, parseFloat(document.getElementById('chargerPower').value))
+                };
+                if (vehiculoId)    r.id_vehiculo    = vehiculoId;
+                if (vehiculoAlias) r.alias_vehiculo = vehiculoAlias;
+                return App.addReservationAsync(r);
+            }
+
+            var promise = (saveNew && newAlias)
+                ? App.addVehicleAsync({ alias: newAlias, tipo: vType, marca: vBrand, capacidad_bateria: vCap })
+                      .then(function(ref) { return doReserve(ref.id, newAlias); })
+                : doReserve(
+                    activeTab === 'registrado' ? selectedVehicle.id    : null,
+                    activeTab === 'registrado' ? selectedVehicle.alias : null
+                  );
+
+            promise
+                .then(function() {
+                    var label = activeTab === 'registrado' ? selectedVehicle.alias : (newAlias || vBrand);
+                    showAlert('Reservación creada — Estación ' + document.getElementById('station').value + ' · ' + label, 'success');
+                    document.getElementById('resForm').reset();
+                    document.getElementById('date').value           = today;
+                    document.getElementById('targetCharge').value   = '80';
+                    document.getElementById('chargerPower').value   = '1.5';
+                    document.getElementById('estimate').style.display = 'none';
+                    document.getElementById('vehicleInfoBanner').innerHTML = '';
+                    document.getElementById('vehicleSelect').value  = '';
+                    document.getElementById('aliasGroup').style.display = 'none';
+                    document.getElementById('battery').readOnly     = false;
+                    selectedVehicle = null;
+                    if (saveNew && newAlias) loadVehicleDropdown();
+                    renderReservations();
+                })
+                .catch(function(err) { showAlert('Error: ' + err.message, 'warning'); })
+                .finally(function() {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Reservación';
+                });
+        });
+
+        function showAlert(msg, type) {
+            document.getElementById('alertBox').innerHTML =
+                '<div class="alert alert-' + type + '"><i class="fas fa-' + (type === 'success' ? 'check-circle' : 'exclamation-triangle') + '"></i> ' + msg + '</div>';
+            setTimeout(function() { document.getElementById('alertBox').innerHTML = ''; }, 4000);
+        }
+
+        function renderReservations() {
+            App.getReservationsAsync().then(function(list) {
+                if (!list.length) {
+                    document.getElementById('resList').innerHTML = '<div class="empty-state"><i class="fas fa-calendar-check"></i><p>No hay reservaciones activas</p></div>';
+                    return;
+                }
+                document.getElementById('resList').innerHTML = list.map(function(r) {
+                    var vLabel = r.alias_vehiculo ? ' · <i class="fas fa-car"></i> ' + r.alias_vehiculo : '';
+                    return '<div class="reservation-item">' +
+                        '<div class="res-info"><div class="res-station">E' + r.stationId + '</div>' +
+                        '<div class="res-details"><h4>' + r.vehicleBrand + ' — Estación ' + r.stationId + '</h4>' +
+                        '<p><i class="fas fa-calendar"></i> ' + App.formatDate(r.date) + ' · ' + r.startTime + ' - ' + r.endTime +
+                        ' · ' + r.batteryCapacity + ' kWh (' + r.currentCharge + '% → ' + r.targetCharge + '%)' + vLabel + '</p>' +
+                        '</div></div>' +
+                        '<button class="btn btn-danger btn-sm" onclick="cancelRes(\'' + r.id + '\')"><i class="fas fa-times"></i> Cancelar</button>' +
+                    '</div>';
+                }).join('');
+            }).catch(function(err) { console.error(err); });
+        }
+
+        window.cancelRes = function(id) {
+            App.cancelReservationAsync(id)
+                .then(function() { renderReservations(); })
+                .catch(function(err) { showAlert('Error al cancelar: ' + err.message, 'warning'); });
+        };
+
+        loadVehicleDropdown();
+        renderReservations();
+    });
+    </script>
+</body>
+</html>
