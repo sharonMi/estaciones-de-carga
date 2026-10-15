@@ -177,7 +177,9 @@ const App = {
     },
 
     deleteVehicleAsync(vehiculoId) {
+        var user = fbAuth.currentUser;
         return fbDb.collection('reservas')
+            .where('id_usuario', '==', user.uid)
             .where('id_vehiculo', '==', vehiculoId)
             .get()
             .then(function(snapshot) {
