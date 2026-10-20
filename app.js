@@ -176,6 +176,11 @@ const App = {
             });
     },
 
+    // Agrega o corrige detalles opcionales de un vehículo ya registrado
+    updateVehicleAsync(vehiculoId, cambios) {
+        return fbDb.collection('vehiculos').doc(vehiculoId).update(cambios);
+    },
+
     deleteVehicleAsync(vehiculoId) {
         var user = fbAuth.currentUser;
         return fbDb.collection('reservas')
@@ -268,7 +273,112 @@ const App = {
         return Math.round(s / 86400) + ' días';
     },
 
+    // --- Estimación de carga ---
+
+    // Comportamiento típico por química de batería:
+    //  eficiencia  -> energía que llega a la batería / energía tomada de la red
+    //  cvDesde     -> % a partir del cual el cargador reduce la corriente (fase CV)
+    //  cvFactor    -> cuánto más lenta es la carga en la fase CV
+    //  degradacion -> pérdida de capacidad por año de uso
+    BATTERY_TYPES: {
+        'Litio-ion':    { eficiencia: 0.90, cvDesde: 80, cvFactor: 2.0, degradacion: 0.03 },
+        'LiFePO4':      { eficiencia: 0.92, cvDesde: 90, cvFactor: 2.0, degradacion: 0.015 },
+        'Plomo-ácido':  { eficiencia: 0.80, cvDesde: 70, cvFactor: 2.5, degradacion: 0.08 }
+    },
+
+    // Valores de referencia cuando el usuario aún no captura los detalles
+    VEHICLE_DEFAULTS: {
+        'Motocicleta':     { capacidad_kwh: 2.0, cargador_kw: 0.8 },
+        'Patín eléctrico': { capacidad_kwh: 0.5, cargador_kw: 0.1 }
+    },
+
+    // Capacidades de referencia de modelos comunes (se pueden ajustar a mano)
+    MODEL_CATALOG: {
+        'NIU NQi GT':             2.1,
+        'Super Soco TC':          1.56,
+        'Xiaomi Pro 2':           0.474,
+        'Segway Ninebot Max G30': 0.551
+    },
+
+    // Capacidad nominal declarada por el usuario: kWh directo, o voltaje × Ah
+    vehicleCapacity(v) {
+        if (v.capacidad_bateria > 0) return v.capacidad_bateria;
+        if (v.voltaje > 0 && v.amperaje_hora > 0) return v.voltaje * v.amperaje_hora / 1000;
+        return null;
+    },
+
+    // Estima tiempo y energía de carga usando todo lo que se sepa del vehículo.
+    // Cada dato faltante se sustituye por un valor de referencia y se reporta en `supuestos`.
+    estimateCharge(v, currentPct, targetPct, stationKw) {
+        var defaults  = this.VEHICLE_DEFAULTS[v.tipo] || this.VEHICLE_DEFAULTS['Motocicleta'];
+        var supuestos = [];
+
+        var quimica = this.BATTERY_TYPES[v.tipo_bateria];
+        if (!quimica) {
+            quimica = this.BATTERY_TYPES['Litio-ion'];
+            supuestos.push('batería de litio-ion');
+        }
+
+        var capacidad = this.vehicleCapacity(v);
+        if (!capacidad) {
+            capacidad = defaults.capacidad_kwh;
+            supuestos.push('capacidad de ' + capacidad + ' kWh (típica de ' + (v.tipo || 'motocicleta').toLowerCase() + ')');
+        }
+
+        var salud = 1;
+        if (this.hasValue(v.antiguedad_anios)) {
+            salud = Math.max(0.6, 1 - quimica.degradacion * v.antiguedad_anios);
+        } else {
+            supuestos.push('batería nueva');
+        }
+
+        var cargador = v.cargador_kw;
+        if (!(cargador > 0)) {
+            cargador = defaults.cargador_kw;
+            supuestos.push('cargador de ' + cargador + ' kW');
+        }
+        var potencia = Math.min(stationKw || cargador, cargador);
+
+        var util   = capacidad * salud;                          // kWh realmente almacenables
+        var desde  = Math.min(currentPct, targetPct);
+        var corte  = Math.max(desde, Math.min(targetPct, quimica.cvDesde));
+        var kwhCC  = util * (corte - desde) / 100;
+        var kwhCV  = util * (targetPct - corte) / 100;
+        var horas  = (kwhCC + kwhCV * quimica.cvFactor) / (potencia * quimica.eficiencia);
+
+        var conocidos = 4 - supuestos.length;
+        return {
+            horas:         Math.round(horas * 10) / 10,
+            kwhBateria:    kwhCC + kwhCV,
+            kwhRed:        (kwhCC + kwhCV) / quimica.eficiencia,
+            potencia:      potencia,
+            capacidadUtil: util,
+            supuestos:     supuestos,
+            precision:     conocidos >= 4 ? 'alta' : conocidos >= 2 ? 'media' : 'baja'
+        };
+    },
+
+    // Datos opcionales que todavía faltan en un vehículo guardado
+    missingDetails(v) {
+        var faltan = [];
+        if (!v.marca) faltan.push('marca/modelo');
+        if (!this.vehicleCapacity(v)) faltan.push('capacidad');
+        if (!(v.cargador_kw > 0)) faltan.push('potencia del cargador');
+        if (!this.hasValue(v.antiguedad_anios)) faltan.push('antigüedad');
+        return faltan;
+    },
+
     // --- Utilidades ---
+
+    hasValue(x) {
+        return x !== undefined && x !== null && x !== '' && !isNaN(x);
+    },
+
+    escapeHtml(s) {
+        return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function(c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    },
 
     calculateChargeTime(capacity, currentPct, targetPct, power) {
         power = power || 1.5;

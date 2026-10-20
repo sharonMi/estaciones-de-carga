@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
     <div class="overlay"></div>
@@ -96,9 +96,10 @@
 
                         <!-- Panel: nuevo vehículo -->
                         <div id="panelNuevo" style="display:none;margin-bottom:14px;">
+                            <p class="form-hint">Solo los campos marcados con * son obligatorios. Los detalles se pueden agregar después desde "Gestionar mis vehículos".</p>
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label for="vehicleType">Tipo de vehículo</label>
+                                    <label for="vehicleType">Tipo de vehículo *</label>
                                     <select id="vehicleType">
                                         <option value="">Selecciona tipo</option>
                                         <option value="Motocicleta">Motocicleta eléctrica</option>
@@ -106,49 +107,60 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label for="vehicleBrand">Marca / Modelo</label>
-                                    <input type="text" id="vehicleBrand" placeholder="Ej: NIU NQi GT, Xiaomi Pro 2">
+                                    <label for="vehicleName">Nombre del vehículo *</label>
+                                    <input type="text" id="vehicleName" maxlength="40" placeholder="Ej: Mi moto azul">
                                 </div>
                             </div>
-                            <div class="form-group" style="margin-bottom:6px;">
-                                <label style="display:flex;align-items:center;gap:8px;font-weight:normal;cursor:pointer;">
-                                    <input type="checkbox" id="saveVehicleCheck">
-                                    Guardar este vehículo para próximas reservas
-                                </label>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="batteryType">Tipo de batería *</label>
+                                    <select id="batteryType">
+                                        <option value="">Selecciona tipo</option>
+                                        <option value="Litio-ion">Litio-ion (la más común)</option>
+                                        <option value="LiFePO4">Litio ferrofosfato (LiFePO4)</option>
+                                        <option value="Plomo-ácido">Plomo-ácido / gel</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="display:flex;align-items:flex-end;">
+                                    <label style="display:flex;align-items:center;gap:8px;font-weight:normal;cursor:pointer;">
+                                        <input type="checkbox" id="saveVehicleCheck" checked style="width:auto;">
+                                        Guardar este vehículo para próximas reservas
+                                    </label>
+                                </div>
                             </div>
-                            <div id="aliasGroup" class="form-group" style="display:none;">
-                                <label for="vAliasInline">Alias del vehículo</label>
-                                <input type="text" id="vAliasInline" placeholder="Ej: Mi moto azul">
-                            </div>
+
+                            <details class="optional-details" id="newDetails">
+                                <summary><i class="fas fa-sliders-h"></i> Detalles opcionales (mejoran la estimación)</summary>
+                                <div class="vehicle-details-fields" data-prefix="new"></div>
+                            </details>
                         </div>
 
                         <hr class="form-divider">
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="battery">Capacidad de batería (kWh)</label>
-                                <input type="number" id="battery" min="0.1" max="20" step="0.01" placeholder="Ej: 3.5 (moto) o 0.47 (patín)" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="currentCharge">Carga actual (%)</label>
+                                <label for="currentCharge">Estado actual estimado de la batería (%) *</label>
                                 <input type="number" id="currentCharge" min="0" max="100" step="1" placeholder="Ej: 20" required>
+                                <small class="form-hint">Si no sabes el valor exacto, usa las barras del tablero: 2 de 5 barras ≈ 40 %.</small>
                             </div>
-                        </div>
-                        <div class="form-row">
                             <div class="form-group">
                                 <label for="targetCharge">Carga objetivo (%)</label>
                                 <input type="number" id="targetCharge" min="1" max="100" step="1" value="80" required>
                             </div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group">
-                                <label for="chargerPower">Potencia del cargador (kW)</label>
+                                <label for="chargerPower">Potencia máxima de la estación (kW)</label>
                                 <input type="number" id="chargerPower" min="0.1" max="10" step="0.1" value="1.5">
                             </div>
+                            <div class="form-group"></div>
                         </div>
 
                         <div class="charge-estimate" id="estimate" style="display:none;">
                             <h4><i class="fas fa-clock"></i> Tiempo estimado de carga</h4>
                             <div class="estimate-value" id="estTime">—</div>
                             <div class="estimate-detail" id="estDetail"></div>
+                            <div class="estimate-detail" id="estPrecision" style="margin-top:6px;"></div>
                         </div>
 
                         <div style="margin-top:20px;">
@@ -179,13 +191,69 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="firebase-config.js"></script>
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
     <script>
+    // Campos opcionales del vehículo. Se reutilizan en el registro y en la edición.
+    var DETAIL_FIELDS = [
+        { key: 'marca',             label: 'Marca / Modelo',              type: 'text',   attrs: 'maxlength="60" list="modelCatalog" placeholder="Ej: NIU NQi GT"' },
+        { key: 'capacidad_bateria', label: 'Capacidad de batería (kWh)',  type: 'number', attrs: 'min="0.05" max="20" step="0.01" placeholder="Ej: 2.1"' },
+        { key: 'voltaje',           label: 'Voltaje de batería (V)',      type: 'number', attrs: 'min="12" max="120" step="1" placeholder="Ej: 60"' },
+        { key: 'amperaje_hora',     label: 'Capacidad en Ah',             type: 'number', attrs: 'min="1" max="200" step="0.1" placeholder="Ej: 35"' },
+        { key: 'cargador_kw',       label: 'Potencia del cargador del vehículo (kW)', type: 'number', attrs: 'min="0.03" max="10" step="0.01" placeholder="Ej: 0.6"' },
+        { key: 'antiguedad_anios',  label: 'Antigüedad de la batería (años)', type: 'number', attrs: 'min="0" max="20" step="0.5" placeholder="Ej: 2"' }
+    ];
+
+    function detailFieldsHtml(prefix, v) {
+        v = v || {};
+        var rows = '';
+        for (var i = 0; i < DETAIL_FIELDS.length; i += 2) {
+            rows += '<div class="form-row">' + DETAIL_FIELDS.slice(i, i + 2).map(function(f) {
+                var val = v[f.key] === undefined || v[f.key] === null ? '' : v[f.key];
+                return '<div class="form-group"><label for="' + prefix + '_' + f.key + '">' + f.label + '</label>' +
+                    '<input type="' + f.type + '" id="' + prefix + '_' + f.key + '" data-key="' + f.key + '" ' + f.attrs +
+                    ' value="' + App.escapeHtml(val) + '"></div>';
+            }).join('') + '</div>';
+        }
+        return rows + '<small class="form-hint">Si no conoces los kWh, captura voltaje y Ah: se calcula V × Ah / 1000.</small>';
+    }
+
+    // Lee los campos opcionales: devuelve solo los que tienen valor
+    function readDetails(prefix) {
+        var out = {};
+        DETAIL_FIELDS.forEach(function(f) {
+            var raw = document.getElementById(prefix + '_' + f.key).value.trim();
+            if (raw === '') return;
+            out[f.key] = f.type === 'number' ? parseFloat(raw) : raw;
+        });
+        return out;
+    }
+
     App.initUI('reservar').then(function(ready) {
         if (!ready) return;
 
+        var esc = App.escapeHtml;
         var selectedVehicle = null;
+        var vehiclesById = {};
         var activeTab = 'registrado';
+
+        // Catálogo de modelos para autocompletar la marca y sugerir la capacidad
+        var catalog = document.createElement('datalist');
+        catalog.id = 'modelCatalog';
+        catalog.innerHTML = Object.keys(App.MODEL_CATALOG).map(function(m) { return '<option value="' + esc(m) + '">'; }).join('');
+        document.body.appendChild(catalog);
+
+        function bindDetailFields(container, prefix, vehicle, onChange) {
+            container.innerHTML = detailFieldsHtml(prefix, vehicle);
+            container.querySelectorAll('input').forEach(function(inp) { inp.addEventListener('input', onChange); });
+            var marca = document.getElementById(prefix + '_marca');
+            var cap   = document.getElementById(prefix + '_capacidad_bateria');
+            marca.addEventListener('change', function() {
+                var ref = App.MODEL_CATALOG[marca.value];
+                if (ref && !cap.value) { cap.value = ref; onChange(); }
+            });
+        }
+
+        bindDetailFields(document.querySelector('#newDetails .vehicle-details-fields'), 'new', null, updateEstimate);
 
         // ── Tabs de vehículo ──────────────────────────────────
 
@@ -196,17 +264,37 @@
             document.getElementById('panelNuevo').style.display      = isReg ? 'none'  : 'block';
             document.getElementById('tabRegistrado').className = isReg ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
             document.getElementById('tabNuevo').className      = isReg ? 'btn btn-outline btn-sm' : 'btn btn-primary btn-sm';
-            if (!isReg) { selectedVehicle = null; document.getElementById('battery').readOnly = false; }
             updateEstimate();
         }
 
         document.getElementById('tabRegistrado').addEventListener('click', function() { switchVehicleTab('registrado'); });
         document.getElementById('tabNuevo').addEventListener('click',      function() { switchVehicleTab('nuevo'); });
+        ['vehicleType', 'batteryType'].forEach(function(id) {
+            document.getElementById(id).addEventListener('change', updateEstimate);
+        });
+
+        // Vehículo con el que se calcula la estimación según la pestaña activa
+        function currentVehicle() {
+            if (activeTab === 'registrado') return selectedVehicle;
+            var v = readDetails('new');
+            v.tipo         = document.getElementById('vehicleType').value;
+            v.tipo_bateria = document.getElementById('batteryType').value;
+            v.alias        = document.getElementById('vehicleName').value.trim();
+            return v.tipo ? v : null;
+        }
+
+        function vehicleSummary(v) {
+            var cap = App.vehicleCapacity(v);
+            return [v.tipo, v.tipo_bateria, v.marca, cap ? (Math.round(cap * 100) / 100) + ' kWh' : null]
+                .filter(Boolean).map(esc).join(' · ');
+        }
 
         // ── Dropdown de vehículos registrados ─────────────────
 
         function loadVehicleDropdown() {
-            App.getVehiclesAsync().then(function(vehicles) {
+            return App.getVehiclesAsync().then(function(vehicles) {
+                vehiclesById = {};
+                vehicles.forEach(function(v) { vehiclesById[v.id] = v; });
                 var sel = document.getElementById('vehicleSelect');
                 if (!vehicles.length) {
                     sel.innerHTML = '<option value="">Sin vehículos — usa "Nuevo vehículo" para agregar uno</option>';
@@ -214,98 +302,159 @@
                 }
                 sel.innerHTML = '<option value="">Selecciona un vehículo…</option>' +
                     vehicles.map(function(v) {
-                        return '<option value="' + v.id + '" ' +
-                            'data-tipo="' + v.tipo + '" ' +
-                            'data-marca="' + v.marca.replace(/"/g,'&quot;') + '" ' +
-                            'data-cap="' + v.capacidad_bateria + '" ' +
-                            'data-alias="' + v.alias.replace(/"/g,'&quot;') + '">' +
-                            v.alias + ' — ' + v.marca + ' (' + v.capacidad_bateria + ' kWh)' +
-                            '</option>';
+                        return '<option value="' + esc(v.id) + '">' + esc(v.alias) + ' — ' + esc(v.tipo) + '</option>';
                     }).join('');
-                // Re-select if one was active
-                if (selectedVehicle) sel.value = selectedVehicle.id;
+                if (selectedVehicle && vehiclesById[selectedVehicle.id]) {
+                    sel.value = selectedVehicle.id;
+                    selectVehicle(selectedVehicle.id);
+                }
             });
         }
 
-        document.getElementById('vehicleSelect').addEventListener('change', function() {
-            var opt = this.options[this.selectedIndex];
-            if (!opt.value) {
-                selectedVehicle = null;
-                document.getElementById('vehicleInfoBanner').innerHTML = '';
-                document.getElementById('battery').value    = '';
-                document.getElementById('battery').readOnly = false;
+        function selectVehicle(id) {
+            selectedVehicle = id ? vehiclesById[id] : null;
+            var banner = document.getElementById('vehicleInfoBanner');
+            if (!selectedVehicle) {
+                banner.innerHTML = '';
                 updateEstimate();
                 return;
             }
-            selectedVehicle = {
-                id:               opt.value,
-                alias:            opt.getAttribute('data-alias'),
-                tipo:             opt.getAttribute('data-tipo'),
-                marca:            opt.getAttribute('data-marca'),
-                capacidad_bateria: parseFloat(opt.getAttribute('data-cap'))
-            };
-            document.getElementById('battery').value    = selectedVehicle.capacidad_bateria;
-            document.getElementById('battery').readOnly = true;
-            document.getElementById('vehicleInfoBanner').innerHTML =
+            var faltan = App.missingDetails(selectedVehicle);
+            banner.innerHTML =
                 '<div class="alert alert-info" style="padding:8px 12px;margin:8px 0 0;font-size:0.875rem;">' +
-                '<i class="fas fa-info-circle"></i> ' +
-                selectedVehicle.tipo + ' · ' + selectedVehicle.marca + ' · ' + selectedVehicle.capacidad_bateria + ' kWh</div>';
+                '<i class="fas fa-info-circle"></i> ' + vehicleSummary(selectedVehicle) +
+                (faltan.length
+                    ? '<br><small>Faltan: ' + faltan.join(', ') + '. <a href="#" id="completeDetailsLink">Completar detalles</a> para una estimación más precisa.</small>'
+                    : '') +
+                '</div>';
+            var link = document.getElementById('completeDetailsLink');
+            if (link) link.addEventListener('click', function(e) {
+                e.preventDefault();
+                openManager();
+                openVehicleEditor(selectedVehicle.id);
+            });
+            if (selectedVehicle.carga_estimada !== undefined && !document.getElementById('currentCharge').value) {
+                document.getElementById('currentCharge').value = selectedVehicle.carga_estimada;
+            }
             updateEstimate();
-        });
+        }
 
-        // ── Checkbox "guardar vehículo" ───────────────────────
-
-        document.getElementById('saveVehicleCheck').addEventListener('change', function() {
-            document.getElementById('aliasGroup').style.display = this.checked ? 'block' : 'none';
-        });
+        document.getElementById('vehicleSelect').addEventListener('change', function() { selectVehicle(this.value); });
 
         // ── Gestionar vehículos (collapsible) ─────────────────
 
+        function openManager() {
+            var panel = document.getElementById('vehicleManagerPanel');
+            panel.style.display = 'block';
+            document.getElementById('toggleManagerBtn').innerHTML = '<i class="fas fa-cog"></i> Gestionar mis vehículos ▴';
+            renderVehicleManager();
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         document.getElementById('toggleManagerBtn').addEventListener('click', function() {
             var panel = document.getElementById('vehicleManagerPanel');
-            var open  = panel.style.display === 'none';
-            panel.style.display = open ? 'block' : 'none';
-            this.innerHTML = '<i class="fas fa-cog"></i> Gestionar mis vehículos ' + (open ? '▴' : '▾');
-            if (open) loadVehicleManager();
+            if (panel.style.display === 'none') {
+                loadVehicleDropdown().then(openManager);
+            } else {
+                panel.style.display = 'none';
+                this.innerHTML = '<i class="fas fa-cog"></i> Gestionar mis vehículos ▾';
+            }
         });
 
-        function loadVehicleManager() {
-            App.getVehiclesAsync().then(function(vehicles) {
-                var c = document.getElementById('vehiculosList');
-                if (!vehicles.length) {
-                    c.innerHTML = '<p style="color:var(--text-muted,#64748b);padding:8px 0;">No tienes vehículos registrados.</p>';
-                    return;
-                }
-                c.innerHTML = vehicles.map(function(v) {
-                    return '<div class="reservation-item">' +
+        function renderVehicleManager() {
+            var c = document.getElementById('vehiculosList');
+            var vehicles = Object.keys(vehiclesById).map(function(id) { return vehiclesById[id]; });
+            if (!vehicles.length) {
+                c.innerHTML = '<p style="color:var(--text-muted,#64748b);padding:8px 0;">No tienes vehículos registrados.</p>';
+                return;
+            }
+            c.innerHTML = vehicles.map(function(v) {
+                var faltan = App.missingDetails(v);
+                return '<div class="vehicle-card">' +
+                    '<div class="reservation-item" style="margin-bottom:0;">' +
                         '<div class="res-info">' +
-                            '<div class="res-station" style="font-size:1rem;"><i class="fas fa-car"></i></div>' +
-                            '<div class="res-details"><h4>' + v.alias + '</h4>' +
-                            '<p>' + v.tipo + ' · ' + v.marca + ' · ' + v.capacidad_bateria + ' kWh</p></div>' +
+                            '<div class="res-station" style="font-size:1rem;"><i class="fas ' + (v.tipo === 'Patín eléctrico' ? 'fa-bolt' : 'fa-motorcycle') + '"></i></div>' +
+                            '<div class="res-details"><h4>' + esc(v.alias) + '</h4>' +
+                            '<p>' + vehicleSummary(v) + '</p>' +
+                            (faltan.length ? '<p style="font-size:12px;color:var(--yellow);">Detalles pendientes: ' + faltan.join(', ') + '</p>' : '') +
+                            '</div>' +
                         '</div>' +
-                        '<button class="btn btn-danger btn-sm" onclick="confirmDeleteVehicle(\'' + v.id + '\',\'' + v.alias.replace(/'/g,"\\'") + '\')">' +
-                            '<i class="fas fa-trash"></i> Eliminar</button>' +
-                    '</div>';
-                }).join('');
+                        '<div style="display:flex;gap:8px;">' +
+                            '<button class="btn btn-outline btn-sm" data-edit="' + esc(v.id) + '"><i class="fas fa-pen"></i> ' + (faltan.length ? 'Completar' : 'Editar') + '</button>' +
+                            '<button class="btn btn-danger btn-sm" data-delete="' + esc(v.id) + '"><i class="fas fa-trash"></i> Eliminar</button>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="vehicle-editor" id="editor_' + esc(v.id) + '" style="display:none;"></div>' +
+                '</div>';
+            }).join('');
+            c.querySelectorAll('[data-edit]').forEach(function(b) {
+                b.addEventListener('click', function() { openVehicleEditor(b.getAttribute('data-edit')); });
+            });
+            c.querySelectorAll('[data-delete]').forEach(function(b) {
+                b.addEventListener('click', function() { confirmDeleteVehicle(b.getAttribute('data-delete')); });
             });
         }
 
-        window.confirmDeleteVehicle = function(id, alias) {
-            if (!confirm('¿Eliminar "' + alias + '" y su historial de reservaciones?')) return;
+        function openVehicleEditor(id) {
+            var v  = vehiclesById[id];
+            var el = document.getElementById('editor_' + id);
+            if (!v || !el) return;
+            if (el.style.display === 'block') { el.style.display = 'none'; return; }
+            var prefix = 'edit_' + id;
+            el.innerHTML =
+                '<div class="form-row">' +
+                    '<div class="form-group"><label>Nombre *</label><input type="text" id="' + prefix + '_alias" maxlength="40" value="' + esc(v.alias) + '"></div>' +
+                    '<div class="form-group"><label>Tipo de batería *</label><select id="' + prefix + '_tipo_bateria">' +
+                        Object.keys(App.BATTERY_TYPES).map(function(t) {
+                            return '<option value="' + esc(t) + '"' + (t === (v.tipo_bateria || 'Litio-ion') ? ' selected' : '') + '>' + esc(t) + '</option>';
+                        }).join('') +
+                    '</select></div>' +
+                '</div>' +
+                '<div class="vehicle-details-fields"></div>' +
+                '<div style="display:flex;gap:8px;margin-top:12px;">' +
+                    '<button type="button" class="btn btn-primary btn-sm" data-save><i class="fas fa-save"></i> Guardar detalles</button>' +
+                    '<button type="button" class="btn btn-outline btn-sm" data-cancel>Cancelar</button>' +
+                '</div>';
+            bindDetailFields(el.querySelector('.vehicle-details-fields'), prefix, v, function() {});
+            el.style.display = 'block';
+            el.querySelector('[data-cancel]').addEventListener('click', function() { el.style.display = 'none'; });
+            el.querySelector('[data-save]').addEventListener('click', function() { saveVehicleDetails(id, prefix, this); });
+        }
+
+        function saveVehicleDetails(id, prefix, btn) {
+            var alias = document.getElementById(prefix + '_alias').value.trim();
+            if (!alias) { showAlert('El nombre del vehículo es obligatorio.', 'warning'); return; }
+            var details = readDetails(prefix);
+            var cambios = { alias: alias, tipo_bateria: document.getElementById(prefix + '_tipo_bateria').value };
+            // Los campos vaciados se eliminan del documento
+            DETAIL_FIELDS.forEach(function(f) {
+                cambios[f.key] = f.key in details ? details[f.key] : firebase.firestore.FieldValue.delete();
+            });
+            btn.disabled = true;
+            App.updateVehicleAsync(id, cambios)
+                .then(function() {
+                    showAlert('Detalles de "' + esc(alias) + '" guardados. Se usarán en la estimación.', 'success');
+                    return loadVehicleDropdown();
+                })
+                .then(renderVehicleManager)
+                .catch(function(err) { showAlert('Error: ' + esc(err.message), 'warning'); btn.disabled = false; });
+        }
+
+        function confirmDeleteVehicle(id) {
+            var v = vehiclesById[id];
+            if (!v || !confirm('¿Eliminar "' + v.alias + '" y su historial de reservaciones?')) return;
             App.deleteVehicleAsync(id).then(function() {
                 if (selectedVehicle && selectedVehicle.id === id) {
                     selectedVehicle = null;
                     document.getElementById('vehicleSelect').value = '';
                     document.getElementById('vehicleInfoBanner').innerHTML = '';
-                    document.getElementById('battery').value    = '';
-                    document.getElementById('battery').readOnly = false;
                 }
-                showAlert('"' + alias + '" eliminado.', 'success');
-                loadVehicleDropdown();
-                loadVehicleManager();
+                showAlert('"' + esc(v.alias) + '" eliminado.', 'success');
                 renderReservations();
-            }).catch(function(err) { showAlert('Error: ' + err.message, 'warning'); });
-        };
+                return loadVehicleDropdown();
+            }).then(renderVehicleManager)
+              .catch(function(err) { showAlert('Error: ' + esc(err.message), 'warning'); });
+        }
 
         // ── Formulario de reservación ─────────────────────────
 
@@ -316,97 +465,108 @@
         document.getElementById('date').value = today;
         document.getElementById('date').min   = today;
 
-        ['battery', 'currentCharge', 'targetCharge', 'chargerPower'].forEach(function(id) {
+        ['currentCharge', 'targetCharge', 'chargerPower'].forEach(function(id) {
             document.getElementById(id).addEventListener('input', updateEstimate);
         });
 
+        function formatHours(h) {
+            var totalMin = Math.round(h * 60);
+            return Math.floor(totalMin / 60) + 'h ' + (totalMin % 60) + 'min';
+        }
+
         function updateEstimate() {
-            var cap = parseFloat(document.getElementById('battery').value);
+            var v   = currentVehicle();
             var cur = parseFloat(document.getElementById('currentCharge').value);
             var tar = parseFloat(document.getElementById('targetCharge').value);
             var pow = parseFloat(document.getElementById('chargerPower').value);
             var box = document.getElementById('estimate');
-            if (cap > 0 && cur >= 0 && tar > cur && pow > 0) {
-                var hours = App.calculateChargeTime(cap, cur, tar, pow);
-                var kwh   = cap * (tar - cur) / 100;
-                document.getElementById('estTime').textContent   = Math.floor(hours) + 'h ' + Math.round((hours % 1) * 60) + 'min';
-                document.getElementById('estDetail').textContent = 'Energía necesaria: ' + kwh.toFixed(1) + ' kWh · Potencia: ' + pow + ' kW';
-                box.style.display = 'block';
-            } else {
+            if (!v || !(cur >= 0) || !(tar > cur) || !(pow > 0)) {
                 box.style.display = 'none';
+                return;
             }
+            var est = App.estimateCharge(v, cur, tar, pow);
+            var colors = { alta: 'var(--green)', media: 'var(--yellow)', baja: 'var(--red)' };
+            document.getElementById('estTime').textContent   = formatHours(est.horas);
+            document.getElementById('estDetail').textContent =
+                'Energía de la red: ' + est.kwhRed.toFixed(2) + ' kWh · Potencia efectiva: ' + est.potencia + ' kW';
+            document.getElementById('estPrecision').innerHTML =
+                '<span style="color:' + colors[est.precision] + ';font-weight:600;">Precisión ' + est.precision + '</span>' +
+                (est.supuestos.length ? ' · Se supuso: ' + est.supuestos.map(esc).join(', ') + '. Agrega esos detalles para afinarla.' : '');
+            box.style.display = 'block';
         }
 
         document.getElementById('resForm').addEventListener('submit', function(e) {
             e.preventDefault();
             var cur = parseFloat(document.getElementById('currentCharge').value);
             var tar = parseFloat(document.getElementById('targetCharge').value);
+            var pow = parseFloat(document.getElementById('chargerPower').value);
             if (cur >= tar) { showAlert('La carga objetivo debe ser mayor que la carga actual.', 'warning'); return; }
 
-            var vType, vBrand, vCap;
+            var v = currentVehicle();
             if (activeTab === 'registrado') {
-                if (!selectedVehicle) { showAlert('Selecciona un vehículo o cambia a "Nuevo vehículo".', 'warning'); return; }
-                vType  = selectedVehicle.tipo;
-                vBrand = selectedVehicle.marca;
-                vCap   = selectedVehicle.capacidad_bateria;
-            } else {
-                vType  = document.getElementById('vehicleType').value;
-                vBrand = document.getElementById('vehicleBrand').value.trim();
-                vCap   = parseFloat(document.getElementById('battery').value);
-                if (!vType || !vBrand || !vCap) { showAlert('Completa los datos del vehículo.', 'warning'); return; }
+                if (!v) { showAlert('Selecciona un vehículo o cambia a "Nuevo vehículo".', 'warning'); return; }
+            } else if (!v || !v.alias || !v.tipo_bateria) {
+                showAlert('Completa tipo de vehículo, nombre y tipo de batería.', 'warning');
+                return;
             }
 
+            var est       = App.estimateCharge(v, cur, tar, pow);
             var submitBtn = document.querySelector('#resForm button[type="submit"]');
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
 
-            var saveNew  = activeTab === 'nuevo' && document.getElementById('saveVehicleCheck').checked;
-            var newAlias = saveNew ? document.getElementById('vAliasInline').value.trim() : '';
+            var saveNew = activeTab === 'nuevo' && document.getElementById('saveVehicleCheck').checked;
 
-            function doReserve(vehiculoId, vehiculoAlias) {
+            function doReserve(vehiculoId) {
                 var r = {
-                    stationId:       parseInt(document.getElementById('station').value),
-                    date:            document.getElementById('date').value,
-                    startTime:       document.getElementById('startTime').value,
-                    endTime:         document.getElementById('endTime').value,
-                    vehicleType:     vType,
-                    vehicleBrand:    vBrand,
-                    batteryCapacity: vCap,
-                    currentCharge:   cur,
-                    targetCharge:    tar,
-                    estimatedHours:  App.calculateChargeTime(vCap, cur, tar, parseFloat(document.getElementById('chargerPower').value))
+                    stationId:        parseInt(document.getElementById('station').value),
+                    date:             document.getElementById('date').value,
+                    startTime:        document.getElementById('startTime').value,
+                    endTime:          document.getElementById('endTime').value,
+                    vehicleType:      v.tipo,
+                    vehicleBrand:     v.marca || v.alias,
+                    batteryType:      v.tipo_bateria || 'Litio-ion',
+                    batteryCapacity:  Math.round(est.capacidadUtil * 100) / 100,
+                    currentCharge:    cur,
+                    targetCharge:     tar,
+                    estimatedHours:   est.horas,
+                    estimatedKwh:     Math.round(est.kwhRed * 100) / 100,
+                    estimatePrecision: est.precision,
+                    alias_vehiculo:   v.alias
                 };
-                if (vehiculoId)    r.id_vehiculo    = vehiculoId;
-                if (vehiculoAlias) r.alias_vehiculo = vehiculoAlias;
+                if (vehiculoId) r.id_vehiculo = vehiculoId;
                 return App.addReservationAsync(r);
             }
 
-            var promise = (saveNew && newAlias)
-                ? App.addVehicleAsync({ alias: newAlias, tipo: vType, marca: vBrand, capacidad_bateria: vCap })
-                      .then(function(ref) { return doReserve(ref.id, newAlias); })
-                : doReserve(
-                    activeTab === 'registrado' ? selectedVehicle.id    : null,
-                    activeTab === 'registrado' ? selectedVehicle.alias : null
-                  );
+            var promise;
+            if (saveNew) {
+                var nuevo = Object.assign({}, v, { carga_estimada: cur });
+                promise = App.addVehicleAsync(nuevo).then(function(ref) { return doReserve(ref.id); });
+            } else if (activeTab === 'registrado') {
+                // Recordar el último estado de batería para prellenar la próxima vez
+                App.updateVehicleAsync(v.id, { carga_estimada: cur }).catch(function(err) { console.error(err); });
+                promise = doReserve(v.id);
+            } else {
+                promise = doReserve(null);
+            }
 
             promise
                 .then(function() {
-                    var label = activeTab === 'registrado' ? selectedVehicle.alias : (newAlias || vBrand);
-                    showAlert('Reservación creada — Estación ' + document.getElementById('station').value + ' · ' + label, 'success');
+                    showAlert('Reservación creada — Estación ' + document.getElementById('station').value + ' · ' + esc(v.alias), 'success');
                     document.getElementById('resForm').reset();
                     document.getElementById('date').value           = today;
                     document.getElementById('targetCharge').value   = '80';
                     document.getElementById('chargerPower').value   = '1.5';
+                    document.getElementById('saveVehicleCheck').checked = true;
+                    document.getElementById('newDetails').open      = false;
                     document.getElementById('estimate').style.display = 'none';
                     document.getElementById('vehicleInfoBanner').innerHTML = '';
                     document.getElementById('vehicleSelect').value  = '';
-                    document.getElementById('aliasGroup').style.display = 'none';
-                    document.getElementById('battery').readOnly     = false;
                     selectedVehicle = null;
-                    if (saveNew && newAlias) loadVehicleDropdown();
+                    loadVehicleDropdown();
                     renderReservations();
                 })
-                .catch(function(err) { showAlert('Error: ' + err.message, 'warning'); })
+                .catch(function(err) { showAlert('Error: ' + esc(err.message), 'warning'); })
                 .finally(function() {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-check"></i> Confirmar Reservación';
@@ -426,24 +586,27 @@
                     return;
                 }
                 document.getElementById('resList').innerHTML = list.map(function(r) {
-                    var vLabel = r.alias_vehiculo ? ' · <i class="fas fa-car"></i> ' + r.alias_vehiculo : '';
+                    var vLabel = r.alias_vehiculo ? ' · <i class="fas fa-car"></i> ' + esc(r.alias_vehiculo) : '';
                     return '<div class="reservation-item">' +
-                        '<div class="res-info"><div class="res-station">E' + r.stationId + '</div>' +
-                        '<div class="res-details"><h4>' + r.vehicleBrand + ' — Estación ' + r.stationId + '</h4>' +
-                        '<p><i class="fas fa-calendar"></i> ' + App.formatDate(r.date) + ' · ' + r.startTime + ' - ' + r.endTime +
-                        ' · ' + r.batteryCapacity + ' kWh (' + r.currentCharge + '% → ' + r.targetCharge + '%)' + vLabel + '</p>' +
+                        '<div class="res-info"><div class="res-station">E' + esc(r.stationId) + '</div>' +
+                        '<div class="res-details"><h4>' + esc(r.vehicleBrand) + ' — Estación ' + esc(r.stationId) + '</h4>' +
+                        '<p><i class="fas fa-calendar"></i> ' + App.formatDate(r.date) + ' · ' + esc(r.startTime) + ' - ' + esc(r.endTime) +
+                        ' · ' + esc(r.batteryCapacity) + ' kWh (' + esc(r.currentCharge) + '% → ' + esc(r.targetCharge) + '%)' + vLabel + '</p>' +
                         '</div></div>' +
-                        '<button class="btn btn-danger btn-sm" onclick="cancelRes(\'' + r.id + '\')"><i class="fas fa-times"></i> Cancelar</button>' +
+                        '<button class="btn btn-danger btn-sm" data-cancel-res="' + esc(r.id) + '"><i class="fas fa-times"></i> Cancelar</button>' +
                     '</div>';
                 }).join('');
+                document.querySelectorAll('[data-cancel-res]').forEach(function(b) {
+                    b.addEventListener('click', function() { cancelRes(b.getAttribute('data-cancel-res')); });
+                });
             }).catch(function(err) { console.error(err); });
         }
 
-        window.cancelRes = function(id) {
+        function cancelRes(id) {
             App.cancelReservationAsync(id)
                 .then(function() { renderReservations(); })
-                .catch(function(err) { showAlert('Error al cancelar: ' + err.message, 'warning'); });
-        };
+                .catch(function(err) { showAlert('Error al cancelar: ' + esc(err.message), 'warning'); });
+        }
 
         loadVehicleDropdown();
         renderReservations();

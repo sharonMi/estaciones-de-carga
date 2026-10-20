@@ -130,6 +130,30 @@ a:hover { color: var(--accent-hover); }
     gap: 16px;
 }
 
+.form-hint { display: block; font-size: 12px; color: var(--text-muted); margin: 4px 0 12px; }
+
+.optional-details {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+}
+.optional-details summary {
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--accent);
+}
+.optional-details[open] summary { margin-bottom: 16px; }
+
+.vehicle-card { margin-bottom: 12px; }
+.vehicle-editor {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    padding: 16px;
+}
+
 .form-divider {
     border: none;
     border-top: 1px solid var(--border);
