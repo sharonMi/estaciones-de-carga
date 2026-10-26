@@ -131,11 +131,10 @@ Con esto, la app arranca sola cada vez que se enciende la Raspberry.
 
 ### 5. Autorizar la IP en Firebase (una sola vez)
 
-Firebase solo permite iniciar sesión desde direcciones autorizadas. `localhost` ya lo está,
-pero `192.168.1.213` no:
+Firebase solo permite iniciar sesión desde direcciones autorizadas. `192.168.1.213` ya está
+autorizada (25/10/2026). Si la Raspberry cambia de IP, hay que agregar la nueva en:
 
-**Firebase Console → Authentication → Settings → Authorized domains → Add domain →
-`192.168.1.213`**
+**Firebase Console → Authentication → Settings → Authorized domains → Add domain**
 
 Sin este paso, la página carga pero el inicio de sesión con Google falla.
 
