@@ -1,0 +1,15 @@
+[Unit]
+Description=SIMCE EvoBike - aplicación web (red local)
+After=network-online.target grafana-server.service influxdb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/estaciones-de-carga
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 0.0.0.0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
