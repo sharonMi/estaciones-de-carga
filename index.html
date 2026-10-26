@@ -60,7 +60,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="firebase-config.js"></script>
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
     <script>
     App.initUI('dashboard').then(function(ready) {
         if (!ready) return;
@@ -131,31 +131,37 @@
             }
         }).catch(function() {});
 
-        // Datos en tiempo real desde ThingSpeak
+        // Datos en tiempo real: Grafana/InfluxDB local, con ThingSpeak como respaldo
         var cards = document.querySelectorAll('.station-card');
+        function fmt(x, digits) { return x === null || x === undefined ? '—' : x.toFixed(digits); }
         App.STATIONS.forEach(function(cfg, idx) {
-            fetch(App.tsFeedUrl(cfg.id))
-                .then(function(r) { return r.json(); })
+            App.fetchReading(cfg.id)
                 .then(function(d) {
                     var card = cards[idx];
                     if (!card) return;
                     var metrics = card.querySelectorAll('.metric-value');
                     if (metrics.length >= 4) {
-                        metrics[0].innerHTML = (parseFloat(d.field1)||0).toFixed(1) + ' <span class="pzem-unit">V</span>';
-                        metrics[1].innerHTML = (parseFloat(d.field2)||0).toFixed(3) + ' <span class="pzem-unit">A</span>';
-                        metrics[2].innerHTML = (parseFloat(d.field3)||0).toFixed(1) + ' <span class="pzem-unit">W</span>';
-                        metrics[3].innerHTML = (parseFloat(d.field4)||0).toFixed(3) + ' <span class="pzem-unit">kWh</span>';
+                        metrics[0].innerHTML = fmt(d.voltaje, 1)   + ' <span class="pzem-unit">V</span>';
+                        metrics[1].innerHTML = fmt(d.corriente, 3) + ' <span class="pzem-unit">A</span>';
+                        metrics[2].innerHTML = fmt(d.potencia, 1)  + ' <span class="pzem-unit">W</span>';
+                        metrics[3].innerHTML = fmt(d.energia, 3)   + ' <span class="pzem-unit">kWh</span>';
                     }
+                    var check = App.validateReading(cfg.id, d.time, d.entryId, d.source);
                     var badge = card.querySelector('.badge');
-                    if (badge && parseFloat(d.field2) > 0.5) {
+                    if (!badge) return;
+                    badge.title = 'Fuente: ' + (d.source === 'grafana' ? 'Grafana (red local)' : 'ThingSpeak (respaldo)') + ' · ' + check.message;
+                    if (check.level !== 'ok') {
+                        badge.className = 'badge badge-offline';
+                        badge.textContent = 'SIN DATOS RECIENTES';
+                    } else if ((d.corriente || 0) > 0.5) {
                         badge.className = 'badge badge-charging';
                         badge.textContent = 'CARGANDO';
-                    } else if (badge) {
+                    } else {
                         badge.className = 'badge badge-available';
                         badge.textContent = 'DISPONIBLE';
                     }
                 })
-                .catch(function() {});
+                .catch(function(err) { console.error('Estación ' + cfg.id + ':', err); });
         });
     });
     </script>

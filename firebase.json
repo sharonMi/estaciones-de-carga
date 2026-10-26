@@ -9,13 +9,19 @@
       "firestore.rules",
       "README.md",
       "esp32/**",
+      "raspberry/**",
       "**/.*",
       "**/node_modules/**"
     ],
     "headers": [
       {
         "source": "**/*.@(js|css)",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
       }
     ]
   }

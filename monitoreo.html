@@ -41,7 +41,7 @@
             <div class="content">
                 <div class="alert alert-info" id="tsStatus">
                     <i class="fas fa-satellite-dish"></i>
-                    Conectando con ThingSpeak — Canal EvoBike...
+                    Conectando con Grafana (red local)...
                 </div>
                 <div class="alert alert-info" id="clockStatus">
                     <i class="fas fa-clock"></i>
@@ -66,19 +66,29 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="firebase-config.js"></script>
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
     <script>
+    // grafanaPanel: id del panel en el dashboard de Grafana (null = no existe allí)
+    // field: campo del canal de ThingSpeak (respaldo)
     var chartsDef = [
-        { field: 1, color: 'ef4444', title: 'Voltaje (V_RMS)', label: 'Voltaje', yaxis: 'Volts' },
-        { field: 2, color: '3b82f6', title: 'Corriente (I_RMS)', label: 'Corriente', yaxis: 'Amperes' },
-        { field: 3, color: '22c55e', title: 'Potencia', label: 'Potencia', yaxis: 'Watts' },
-        { field: 4, color: 'f59e0b', title: 'Energía', label: 'Energía', yaxis: 'kWh' },
-        { field: 5, color: '8b5cf6', title: 'Frecuencia', label: 'Frecuencia', yaxis: 'Hz' },
-        { field: 6, color: '06b6d4', title: 'Factor de Potencia', label: 'Factor P.', yaxis: 'PF' }
+        { key: 'voltaje',    field: 1, grafanaPanel: null, color: 'ef4444', title: 'Voltaje (V_RMS)', label: 'Voltaje', yaxis: 'Volts' },
+        { key: 'corriente',  field: 2, grafanaPanel: 1,    color: '3b82f6', title: 'Corriente (I_RMS)', label: 'Corriente', yaxis: 'Amperes' },
+        { key: 'potencia',   field: 3, grafanaPanel: 2,    color: '22c55e', title: 'Potencia', label: 'Potencia', yaxis: 'Watts' },
+        { key: 'energia',    field: 4, grafanaPanel: 3,    color: 'f59e0b', title: 'Energía', label: 'Energía', yaxis: 'kWh' },
+        { key: 'frecuencia', field: 5, grafanaPanel: null, color: '8b5cf6', title: 'Frecuencia', label: 'Frecuencia', yaxis: 'Hz' },
+        { key: 'fp',         field: 6, grafanaPanel: 4,    color: '06b6d4', title: 'Factor de Potencia', label: 'Factor P.', yaxis: 'PF' }
     ];
+
+    var SOURCE_LABEL = { grafana: 'Grafana', thingspeak: 'ThingSpeak' };
+    var chartSource  = {};   // estación -> fuente con la que se dibujaron las gráficas
+    var lastSource   = {};   // estación -> fuente de la última lectura
 
     function pzemItem(value, unit, label) {
         return '<div class="pzem-item"><div class="pzem-value">' + value + ' <span class="pzem-unit">' + unit + '</span></div><div class="pzem-label">' + label + '</div></div>';
+    }
+
+    function fmt(x, digits) {
+        return x === null || x === undefined ? '—' : x.toFixed(digits);
     }
 
     function pzemDefaults() {
@@ -88,68 +98,96 @@
     }
 
     function buildStationTab(stationId) {
-        var cfg = App.getStationConfig(stationId);
         return '<div class="monitor-card" style="margin-bottom:24px;">' +
             '<div class="monitor-header">' +
             '<h3><i class="fas fa-plug" style="margin-right:8px;"></i> Estación ' + stationId + '</h3>' +
-            '<span class="badge badge-charging" id="live' + stationId + '">ThingSpeak</span></div>' +
+            '<span class="badge badge-offline" id="live' + stationId + '">Consultando...</span></div>' +
             '<div class="monitor-body">' +
             '<div class="pzem-grid" id="liveData' + stationId + '">' + pzemDefaults() + '</div>' +
             '<div id="lastUpdate' + stationId + '" style="margin-top:12px;font-size:12px;color:var(--text-muted);text-align:right;"></div>' +
             '<div id="tsCheck' + stationId + '" style="margin-top:4px;font-size:12px;text-align:right;"></div>' +
             '</div></div>' +
-            '<h3 class="section-title"><i class="fas fa-chart-area"></i> Gráficas — Estación ' + stationId + '</h3>' +
-            '<div class="monitor-grid">' + chartsDef.map(function(c) {
-                return '<div class="monitor-card">' +
-                    '<div class="monitor-header"><h3>' + c.title + '</h3><span class="badge badge-charging">En vivo</span></div>' +
-                    '<div class="monitor-body"><iframe src="' + App.tsChartUrl(stationId, c.field, c.color, c.label, c.yaxis) + '"></iframe></div></div>';
-            }).join('') + '</div>';
+            '<h3 class="section-title"><i class="fas fa-chart-area"></i> Gráficas — Estación ' + stationId +
+            ' <span class="badge badge-reserved" id="chartSrc' + stationId + '" style="margin-left:8px;">—</span></h3>' +
+            '<div class="monitor-grid" id="charts' + stationId + '"></div>';
+    }
+
+    // Dibuja las gráficas solo cuando cambia la fuente, para no recargar los iframes en cada consulta
+    function renderCharts(stationId, source) {
+        if (chartSource[stationId] === source) return;
+        chartSource[stationId] = source;
+        var defs = source === 'grafana'
+            ? chartsDef.filter(function(c) { return c.grafanaPanel !== null; })
+            : chartsDef;
+        document.getElementById('chartSrc' + stationId).textContent = SOURCE_LABEL[source];
+        document.getElementById('charts' + stationId).innerHTML = defs.map(function(c) {
+            var src = source === 'grafana'
+                ? App.grafanaChartUrl(stationId, c.grafanaPanel)
+                : App.tsChartUrl(stationId, c.field, c.color, c.label, c.yaxis);
+            return '<div class="monitor-card">' +
+                '<div class="monitor-header"><h3>' + c.title + '</h3><span class="badge badge-charging">En vivo</span></div>' +
+                '<div class="monitor-body"><iframe src="' + src + '"></iframe></div></div>';
+        }).join('');
+    }
+
+    function renderSourceStatus() {
+        var el = document.getElementById('tsStatus');
+        var sources = Object.keys(lastSource).map(function(k) { return lastSource[k]; });
+        if (!sources.length) return;
+        var hora = new Date().toLocaleTimeString('es-MX');
+        if (sources.every(function(s) { return s === 'grafana'; })) {
+            el.className = 'alert alert-success';
+            el.innerHTML = '<i class="fas fa-check-circle"></i> Fuente: Grafana + InfluxDB en la Raspberry Pi (red local) · Última actualización: ' + hora;
+        } else {
+            el.className = 'alert alert-warning';
+            el.innerHTML = '<i class="fas fa-life-ring"></i> Usando respaldo ThingSpeak: ' + App.escapeHtml(App.localError || App.localBlockedReason() || 'Grafana no disponible') +
+                '. Se reintentará la red local automáticamente · Última actualización: ' + hora;
+        }
     }
 
     function fetchStation(stationId) {
-        fetch(App.tsFeedUrl(stationId))
-            .then(function(r) { return r.json(); })
+        return App.fetchReading(stationId)
             .then(function(d) {
-                var v = parseFloat(d.field1) || 0;
-                var i = parseFloat(d.field2) || 0;
-                var p = parseFloat(d.field3) || 0;
-                var e = parseFloat(d.field4) || 0;
-                var f = parseFloat(d.field5) || 0;
-                var pf = parseFloat(d.field6) || 0;
+                lastSource[stationId] = d.source;
+                renderCharts(stationId, d.source);
 
                 document.getElementById('liveData' + stationId).innerHTML =
-                    pzemItem(v.toFixed(1), 'V', 'Voltaje') +
-                    pzemItem(i.toFixed(3), 'A', 'Corriente') +
-                    pzemItem(p.toFixed(1), 'W', 'Potencia') +
-                    pzemItem(e.toFixed(3), 'kWh', 'Energía') +
-                    pzemItem(f.toFixed(1), 'Hz', 'Frecuencia') +
-                    pzemItem(pf.toFixed(2), '', 'Factor P.');
+                    pzemItem(fmt(d.voltaje, 1), 'V', 'Voltaje') +
+                    pzemItem(fmt(d.corriente, 3), 'A', 'Corriente') +
+                    pzemItem(fmt(d.potencia, 1), 'W', 'Potencia') +
+                    pzemItem(fmt(d.energia, 3), 'kWh', 'Energía') +
+                    pzemItem(fmt(d.frecuencia, 1), 'Hz', 'Frecuencia') +
+                    pzemItem(fmt(d.fp, 2), '', 'Factor P.');
 
-                var ts = new Date(d.created_at);
+                var ts = new Date(d.time);
                 document.getElementById('lastUpdate' + stationId).textContent =
-                    'Última lectura: ' + ts.toLocaleString('es-MX') + ' (Entry #' + d.entry_id + ')';
+                    'Última lectura: ' + ts.toLocaleString('es-MX') + ' · ' + SOURCE_LABEL[d.source] +
+                    (d.entryId !== null ? ' (Entry #' + d.entryId + ')' : '');
 
-                var check = App.validateReading(stationId, d.created_at, d.entry_id);
+                var check = App.validateReading(stationId, d.time, d.entryId, d.source);
                 var icons  = { ok: 'fa-check-circle', warning: 'fa-exclamation-triangle', error: 'fa-times-circle' };
                 var colors = { ok: 'var(--green)', warning: 'var(--yellow)', error: 'var(--red)' };
                 var checkEl = document.getElementById('tsCheck' + stationId);
                 checkEl.style.color = colors[check.level];
                 checkEl.innerHTML = '<i class="fas ' + icons[check.level] + '"></i> ' + check.message;
 
+                // Con datos viejos no se puede afirmar que la estación esté cargando
                 var badge = document.getElementById('live' + stationId);
-                badge.className = i > 0.5 ? 'badge badge-charging' : 'badge badge-available';
-                badge.textContent = i > 0.5 ? 'Cargando' : 'Disponible';
-
-                if (stationId === 1) {
-                    document.getElementById('tsStatus').className = 'alert alert-success';
-                    document.getElementById('tsStatus').innerHTML =
-                        '<i class="fas fa-check-circle"></i> Conectado a ThingSpeak — 3 canales activos · Última actualización: ' + ts.toLocaleTimeString('es-MX');
+                if (check.level !== 'ok') {
+                    badge.className = 'badge badge-offline';
+                    badge.textContent = 'Sin datos recientes';
+                } else {
+                    var cargando = (d.corriente || 0) > 0.5;
+                    badge.className = cargando ? 'badge badge-charging' : 'badge badge-available';
+                    badge.textContent = cargando ? 'Cargando' : 'Disponible';
                 }
             })
-            .catch(function() {
+            .catch(function(err) {
+                console.error('Estación ' + stationId + ':', err);
                 var badge = document.getElementById('live' + stationId);
                 badge.className = 'badge badge-offline';
                 badge.textContent = 'Error';
+                document.getElementById('tsCheck' + stationId).textContent = 'Sin datos de Grafana ni de ThingSpeak';
             });
     }
 
@@ -168,8 +206,13 @@
             });
         });
 
+        // Red local: cada 10 s. Con el respaldo de ThingSpeak: cada 30 s (su límite es ~15 s).
         function fetchAll() {
-            [1, 2, 3].forEach(fetchStation);
+            Promise.all([1, 2, 3].map(fetchStation)).then(function() {
+                renderSourceStatus();
+                var allLocal = [1, 2, 3].every(function(id) { return lastSource[id] === 'grafana'; });
+                setTimeout(fetchAll, allLocal ? 10000 : 30000);
+            });
         }
 
         function showClockStatus() {
@@ -189,10 +232,7 @@
                 el.className = 'alert alert-warning';
                 el.innerHTML = '<i class="fas fa-clock"></i> No se pudo sincronizar con el servidor; se usa la hora local del equipo.';
             })
-            .then(function() {
-                fetchAll();
-                setInterval(fetchAll, 30000);
-            });
+            .then(fetchAll);
     });
     </script>
 </body>

@@ -1,8 +1,22 @@
 const App = {
+    // ------------------------------------------------------------------
+    // Monitoreo: fuente principal Grafana + InfluxDB en la Raspberry Pi
+    // (solo red local) y ThingSpeak como respaldo.
+    // Si la Raspberry cambia de IP, actualiza grafanaUrl e influxUrl.
+    // ------------------------------------------------------------------
+    LOCAL: {
+        grafanaUrl:  'http://192.168.1.213:3000',
+        influxUrl:   'http://192.168.1.213:8086',
+        influxDb:    'sensores_db',
+        measurement: 'lecturas_esp32',
+        timeoutMs:   3000,           // espera máxima antes de pasar al respaldo
+        retryMs:     60 * 1000       // tras una falla, reintentar la red local cada minuto
+    },
+
     STATIONS: [
-        { id: 1, channel: '3360039', apiKey: 'MMUHRVIAOTKL8QHQ' },
-        { id: 2, channel: '3372390', apiKey: 'UQYT8WT4I9PS085D' },
-        { id: 3, channel: '3407943', apiKey: 'SVABK6Q2I4RN2QX4' }
+        { id: 1, channel: '3360039', apiKey: 'MMUHRVIAOTKL8QHQ', grafanaUid: 'adq7b5k', grafanaSlug: 'pzem004t-id23-1' },
+        { id: 2, channel: '3372390', apiKey: 'UQYT8WT4I9PS085D', grafanaUid: 'gigwssj', grafanaSlug: 'pzem004t-id23-2' },
+        { id: 3, channel: '3407943', apiKey: 'SVABK6Q2I4RN2QX4', grafanaUid: 'giqt444', grafanaSlug: 'pzem004t-id23-3' }
     ],
 
     getStationConfig(stationId) {
@@ -19,6 +33,110 @@ const App = {
         return 'https://thingspeak.com/channels/' + cfg.channel + '/charts/' + field +
             '?bgcolor=%23ffffff&color=%23' + color + '&dynamic=true&results=60&title=' + encodeURIComponent(title) +
             '&type=line&xaxis=Tiempo&yaxis=' + encodeURIComponent(yaxis) + '&api_key=' + cfg.apiKey;
+    },
+
+    grafanaChartUrl(stationId, panelId) {
+        var cfg = this.getStationConfig(stationId);
+        return this.LOCAL.grafanaUrl + '/d-solo/' + cfg.grafanaUid + '/' + cfg.grafanaSlug +
+            '?orgId=1&panelId=' + panelId + '&from=now-15m&to=now&refresh=10s&theme=light&tz=America%2FMexico_City';
+    },
+
+    // --- Fuentes de datos del monitoreo ---
+
+    localDownUntil: 0,       // mientras Date.now() < localDownUntil se usa directo el respaldo
+    localError:     '',
+
+    // Motivo por el que la red local no se puede usar desde esta página ('' = sí se puede)
+    localBlockedReason() {
+        // Un sitio https no puede consultar http://192.168... (contenido mixto)
+        if (location.protocol === 'https:') return 'la página se abrió por https; la integración local requiere abrirla por http dentro de la red';
+        if (Date.now() < this.localDownUntil) return this.localError;
+        return '';
+    },
+
+    fetchWithTimeout(url, ms) {
+        var ctrl  = new AbortController();
+        var timer = setTimeout(function() { ctrl.abort(); }, ms);
+        return fetch(url, { signal: ctrl.signal }).finally(function() { clearTimeout(timer); });
+    },
+
+    // Última lectura de InfluxDB 1.x. El script de la Raspberry etiqueta cada punto con "id" = estación.
+    fetchInfluxReading(stationId) {
+        var id    = parseInt(stationId, 10);
+        var query = 'SELECT * FROM "' + this.LOCAL.measurement + '" WHERE "id" = \'' + id + '\' ORDER BY time DESC LIMIT 1';
+        var url   = this.LOCAL.influxUrl + '/query?db=' + encodeURIComponent(this.LOCAL.influxDb) + '&q=' + encodeURIComponent(query);
+        return this.fetchWithTimeout(url, this.LOCAL.timeoutMs)
+            .then(function(res) {
+                if (!res.ok) throw new Error('InfluxDB respondió ' + res.status);
+                return res.json();
+            })
+            .then(function(data) {
+                var series = data.results && data.results[0] && data.results[0].series && data.results[0].series[0];
+                if (!series || !series.values || !series.values.length) {
+                    throw new Error('InfluxDB no tiene lecturas de la estación ' + id);
+                }
+                var row = {};
+                series.columns.forEach(function(col, i) { row[col] = series.values[0][i]; });
+                return {
+                    source:     'grafana',
+                    time:       row.time,       // RFC3339 en UTC
+                    entryId:    null,
+                    voltaje:    App.numOrNull(row.voltaje),
+                    corriente:  App.numOrNull(row.corriente),
+                    potencia:   App.numOrNull(row.potencia),
+                    energia:    App.numOrNull(row.energia),
+                    frecuencia: App.numOrNull(row.frecuencia),
+                    fp:         App.numOrNull(row.factor_potencia)
+                };
+            });
+    },
+
+    fetchThingSpeakReading(stationId) {
+        return fetch(this.tsFeedUrl(stationId))
+            .then(function(res) {
+                if (!res.ok) throw new Error('ThingSpeak respondió ' + res.status);
+                return res.json();
+            })
+            .then(function(d) {
+                if (!d || !d.created_at) throw new Error('ThingSpeak no tiene lecturas');
+                return {
+                    source:     'thingspeak',
+                    time:       d.created_at,
+                    entryId:    d.entry_id,
+                    voltaje:    App.numOrNull(d.field1),
+                    corriente:  App.numOrNull(d.field2),
+                    potencia:   App.numOrNull(d.field3),
+                    energia:    App.numOrNull(d.field4),
+                    frecuencia: App.numOrNull(d.field5),
+                    fp:         App.numOrNull(d.field6)
+                };
+            });
+    },
+
+    // Intenta Grafana/InfluxDB local; si falla, usa ThingSpeak. La lectura indica
+    // su fuente en `source` y, si se usó el respaldo, el motivo en `fallbackReason`.
+    fetchReading(stationId) {
+        var self    = this;
+        var blocked = this.localBlockedReason();
+        var local   = blocked ? Promise.reject(new Error(blocked)) : this.fetchInfluxReading(stationId);
+        return local.catch(function(err) {
+            var reason = err.name === 'AbortError' ? 'la Raspberry Pi no respondió en ' + (self.LOCAL.timeoutMs / 1000) + ' s'
+                       : err.message === 'Failed to fetch' ? 'no se pudo conectar con la Raspberry Pi (¿misma red WiFi?)'
+                       : err.message;
+            if (!blocked) {
+                self.localDownUntil = Date.now() + self.LOCAL.retryMs;
+                self.localError     = reason;
+            }
+            return self.fetchThingSpeakReading(stationId).then(function(r) {
+                r.fallbackReason = reason;
+                return r;
+            });
+        });
+    },
+
+    numOrNull(x) {
+        var n = parseFloat(x);
+        return isNaN(n) ? null : n;
     },
 
     logout() {
@@ -206,7 +324,7 @@ const App = {
 
     clockOffset: 0,          // hora_servidor - hora_navegador (ms)
     clockSynced: false,
-    lastReadings: {},        // stationId -> { entryId, time }
+    lastReadings: {},        // "estación:fuente" -> { entryId, time }
 
     // Calcula el desfase del reloj local contra la hora del servidor de Firestore
     // (mismo principio que NTP: se compensa la mitad del tiempo de ida y vuelta).
@@ -231,11 +349,14 @@ const App = {
     },
 
     // Compara la marca de tiempo de una lectura con la hora del servidor y con
-    // la lectura anterior de la misma estación. Devuelve { level, message, age }.
-    validateReading(stationId, createdAt, entryId) {
+    // la lectura anterior de la misma estación y fuente. Devuelve { level, message, age }.
+    // InfluxDB no tiene entry_id: en ese caso (entryId null) solo se compara la hora.
+    validateReading(stationId, createdAt, entryId, source) {
         var rules = this.TIME_RULES;
         var time  = Date.parse(createdAt);
-        var prev  = this.lastReadings[stationId];
+        var key   = stationId + ':' + (source || 'thingspeak');
+        var prev  = this.lastReadings[key];
+        var hasId = entryId !== null && entryId !== undefined;
 
         if (isNaN(time)) {
             return { level: 'error', message: 'Marca de tiempo inválida' };
@@ -244,22 +365,24 @@ const App = {
         var age = this.serverNow() - time;
         var result;
 
-        if (prev && entryId < prev.entryId) {
+        if (prev && hasId && entryId < prev.entryId) {
             result = { level: 'error', message: 'Lectura fuera de orden (entry #' + entryId + ' < #' + prev.entryId + ')' };
-        } else if (prev && entryId > prev.entryId && time <= prev.time) {
+        } else if (prev && !hasId && time < prev.time) {
+            result = { level: 'error', message: 'Lectura fuera de orden: la hora retrocedió respecto a la anterior' };
+        } else if (prev && hasId && entryId > prev.entryId && time <= prev.time) {
             result = { level: 'error', message: 'Marca de tiempo no creciente respecto a la lectura anterior' };
         } else if (age < -rules.maxFutureSkew) {
             result = { level: 'error', message: 'Marca de tiempo en el futuro: revisar NTP del dispositivo' };
         } else if (age > rules.maxAge) {
             result = { level: 'warning', message: 'Sin datos recientes (hace ' + this.formatAge(age) + ')' };
-        } else if (prev && entryId === prev.entryId) {
+        } else if (prev && (hasId ? entryId === prev.entryId : time === prev.time)) {
             result = { level: 'ok', message: 'Sin lecturas nuevas desde la última consulta' };
         } else {
             result = { level: 'ok', message: 'Sincronizado (hace ' + this.formatAge(age) + ')' };
         }
 
         if (result.level !== 'error') {
-            this.lastReadings[stationId] = { entryId: entryId, time: time };
+            this.lastReadings[key] = { entryId: entryId, time: time };
         }
         result.age = age;
         return result;
