@@ -205,6 +205,7 @@ const App = {
     },
 
     clockOffset: 0,          // hora_servidor - hora_navegador (ms)
+    clockRtt:    null,       // ida y vuelta de la sincronización con Firestore (ms)
     clockSynced: false,
     lastReadings: {},        // stationId -> { entryId, time }
 
@@ -221,6 +222,7 @@ const App = {
                 var t1  = Date.now();
                 var srv = doc.data().hora_servidor.toMillis();
                 self.clockOffset = srv - (t0 + t1) / 2;
+                self.clockRtt    = t1 - t0;
                 self.clockSynced = true;
                 return { offset: self.clockOffset, rtt: t1 - t0 };
             });
@@ -258,11 +260,121 @@ const App = {
             result = { level: 'ok', message: 'Sincronizado (hace ' + this.formatAge(age) + ')' };
         }
 
+        // Lectura que la página no había visto antes (sirve para medir la latencia solo una vez)
+        result.isNew = !prev || entryId !== prev.entryId;
         if (result.level !== 'error') {
             this.lastReadings[stationId] = { entryId: entryId, time: time };
         }
         result.age = age;
         return result;
+    },
+
+    // --- Métricas de funcionamiento (colección "metricas" en Firestore) ---
+    //
+    // Latencia extremo a extremo de cada lectura nueva:
+    //   T0 = hora de la medición (created_at / time de la fuente, UTC)
+    //   T3 = momento en que la página terminó de mostrarla, con la hora corregida del servidor
+    //   latencia = T3 − T0
+    // Se guarda un resumen por estación cada 5 minutos (y al cerrar u ocultar la página).
+
+    METRICS_FLUSH_MS:   5 * 60 * 1000,
+    METRICS_MAX_SAMPLES: 300,
+    metrics:      {},     // estación -> acumulado del periodo actual
+    metricsStart: null,
+
+    metricsBucket(stationId) {
+        if (!this.metrics[stationId]) {
+            this.metrics[stationId] = {
+                latencias: [], consultas: [], fuentes: {},
+                nuevas: 0, invalidas: 0, sinDatosRecientes: 0, total: 0, errores: 0
+            };
+        }
+        return this.metrics[stationId];
+    },
+
+    // Se llama cada vez que la página consulta una estación y ya mostró el resultado
+    recordReading(stationId, reading, check) {
+        var b = this.metricsBucket(stationId);
+        if (this.metricsStart === null) this.metricsStart = this.serverNow();
+        b.total++;
+        b.fuentes[reading.source] = (b.fuentes[reading.source] || 0) + 1;
+        if (b.consultas.length < this.METRICS_MAX_SAMPLES) b.consultas.push(reading.fetchMs);
+        if (check.level === 'error')   b.invalidas++;
+        if (check.level === 'warning') b.sinDatosRecientes++;
+        if (check.isNew && check.level !== 'error') {
+            b.nuevas++;
+            var latencia = Math.round(this.serverNow() - Date.parse(reading.time));
+            if (b.latencias.length < this.METRICS_MAX_SAMPLES) b.latencias.push(latencia);
+        }
+    },
+
+    recordFetchError(stationId) {
+        if (this.metricsStart === null) this.metricsStart = this.serverNow();
+        var b = this.metricsBucket(stationId);
+        b.total++;
+        b.errores++;
+    },
+
+    percentile(values, p) {
+        if (!values.length) return null;
+        var sorted = values.slice().sort(function(a, b) { return a - b; });
+        var idx = Math.min(sorted.length - 1, Math.ceil(p / 100 * sorted.length) - 1);
+        return sorted[Math.max(0, idx)];
+    },
+
+    flushMetrics(pagina) {
+        var self = this;
+        var user = fbAuth.currentUser;
+        var ids  = Object.keys(this.metrics);
+        if (!user || !ids.length) return Promise.resolve(0);
+
+        var inicio = this.metricsStart;
+        var fin    = this.serverNow();
+        var tz     = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        var batch  = fbDb.batch();
+
+        ids.forEach(function(id) {
+            var b = self.metrics[id];
+            batch.set(fbDb.collection('metricas').doc(), {
+                id_usuario:           user.uid,
+                pagina:               pagina,
+                estacion:             parseInt(id, 10),
+                fuentes:              b.fuentes,
+                consultas:            b.total,
+                lecturas_nuevas:      b.nuevas,
+                lecturas_invalidas:   b.invalidas,
+                sin_datos_recientes:  b.sinDatosRecientes,
+                errores_consulta:     b.errores,
+                latencia_ms:          b.latencias,
+                latencia_p50_ms:      self.percentile(b.latencias, 50),
+                latencia_p95_ms:      self.percentile(b.latencias, 95),
+                consulta_ms:          b.consultas,
+                consulta_p95_ms:      self.percentile(b.consultas, 95),
+                desfase_reloj_ms:     self.clockSynced ? Math.round(self.clockOffset) : null,
+                rtt_reloj_ms:         self.clockRtt,
+                zona_horaria:         tz,
+                utc_offset_min:       -new Date().getTimezoneOffset(),
+                inicio_periodo:       new Date(inicio),
+                fin_periodo_cliente:  new Date(fin),     // comparar con fecha_registro valida la corrección del reloj
+                fecha_registro:       firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        this.metrics      = {};
+        this.metricsStart = null;
+        return batch.commit().then(function() { return ids.length; });
+    },
+
+    // Guarda las métricas periódicamente y al ocultar o cerrar la página
+    startMetrics(pagina) {
+        var self  = this;
+        var flush = function() {
+            self.flushMetrics(pagina).catch(function(err) { console.error('No se pudieron guardar las métricas:', err); });
+        };
+        setInterval(flush, this.METRICS_FLUSH_MS);
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') flush();
+        });
     },
 
     formatAge(ms) {

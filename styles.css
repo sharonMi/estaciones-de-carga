@@ -278,6 +278,7 @@ a:hover { color: var(--accent-hover); }
 /* ---- MAIN ---- */
 .main {
     flex: 1;
+    min-width: 0;          /* sin esto, una tabla ancha estira toda la página en móvil */
     margin-left: var(--sidebar-w);
     display: flex;
     flex-direction: column;

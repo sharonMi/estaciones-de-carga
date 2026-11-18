@@ -36,6 +36,23 @@ service cloud.firestore {
                     && request.resource.data.id_usuario == resource.data.id_usuario;
     }
 
+    // Métricas de funcionamiento (App.flushMetrics). Son un registro: no se editan ni se borran.
+    match /metricas/{id} {
+      allow read:   if request.auth != null;
+      allow create: if isOwner(request.resource.data.id_usuario)
+                    && usesServerTime('fecha_registro')
+                    && request.resource.data.keys().hasOnly([
+                         'id_usuario', 'pagina', 'estacion', 'fuentes', 'consultas',
+                         'lecturas_nuevas', 'lecturas_invalidas', 'sin_datos_recientes',
+                         'errores_consulta', 'latencia_ms', 'latencia_p50_ms', 'latencia_p95_ms',
+                         'consulta_ms', 'consulta_p95_ms', 'desfase_reloj_ms', 'rtt_reloj_ms',
+                         'zona_horaria', 'utc_offset_min', 'inicio_periodo',
+                         'fin_periodo_cliente', 'fecha_registro'])
+                    && request.resource.data.latencia_ms.size() <= 300
+                    && request.resource.data.consulta_ms.size() <= 300;
+      allow update, delete: if false;
+    }
+
     // Documento usado por App.syncServerClock() para medir el desfase del reloj
     match /sincronizacion/{uid} {
       allow read:  if isOwner(uid);
