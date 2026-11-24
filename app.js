@@ -1,22 +1,8 @@
 const App = {
-    // ------------------------------------------------------------------
-    // Monitoreo: fuente principal Grafana + InfluxDB en la Raspberry Pi
-    // (solo red local) y ThingSpeak como respaldo.
-    // Si la Raspberry cambia de IP, actualiza grafanaUrl e influxUrl.
-    // ------------------------------------------------------------------
-    LOCAL: {
-        grafanaUrl:  'http://192.168.1.213:3000',
-        influxUrl:   'http://192.168.1.213:8086',
-        influxDb:    'sensores_db',
-        measurement: 'lecturas_esp32',
-        timeoutMs:   3000,           // espera máxima antes de pasar al respaldo
-        retryMs:     60 * 1000       // tras una falla, reintentar la red local cada minuto
-    },
-
     STATIONS: [
-        { id: 1, channel: '3360039', apiKey: 'MMUHRVIAOTKL8QHQ', grafanaUid: 'adq7b5k', grafanaSlug: 'pzem004t-id23-1' },
-        { id: 2, channel: '3372390', apiKey: 'UQYT8WT4I9PS085D', grafanaUid: 'gigwssj', grafanaSlug: 'pzem004t-id23-2' },
-        { id: 3, channel: '3407943', apiKey: 'SVABK6Q2I4RN2QX4', grafanaUid: 'giqt444', grafanaSlug: 'pzem004t-id23-3' }
+        { id: 1, channel: '3360039', apiKey: 'MMUHRVIAOTKL8QHQ' },
+        { id: 2, channel: '3372390', apiKey: 'UQYT8WT4I9PS085D' },
+        { id: 3, channel: '3407943', apiKey: 'SVABK6Q2I4RN2QX4' }
     ],
 
     getStationConfig(stationId) {
@@ -35,112 +21,62 @@ const App = {
             '&type=line&xaxis=Tiempo&yaxis=' + encodeURIComponent(yaxis) + '&api_key=' + cfg.apiKey;
     },
 
-    grafanaChartUrl(stationId, panelId) {
-        var cfg = this.getStationConfig(stationId);
-        return this.LOCAL.grafanaUrl + '/d-solo/' + cfg.grafanaUid + '/' + cfg.grafanaSlug +
-            '?orgId=1&panelId=' + panelId + '&from=now-15m&to=now&refresh=10s&theme=light&tz=America%2FMexico_City';
+    // ---------- Grafana (gráficas incrustadas, con respaldo en ThingSpeak) ----------
+    // `stations[n].uid` y `slug` salen de la URL del dashboard: /d/<uid>/<slug>.
+    // `panels` relaciona el campo de ThingSpeak (field) con el panelId de Grafana.
+    // Una gráfica sin panel en Grafana (voltaje y frecuencia, por ahora) se queda en ThingSpeak.
+    // Para añadirla después, agrega su panelId aquí (p. ej. 1: 5) y listo.
+    GRAFANA: {
+        baseUrl: 'https://pi.tail300962.ts.net',
+        orgId: 1,
+        theme: 'light',
+        refresh: '5s',
+        from: 'now-2m',
+        to: 'now',
+        probeTimeoutMs: 4000,
+        stations: {
+            1: { uid: 'adq7b5k', slug: 'pzem004t-id23-1', panels: { 2: 1, 3: 2, 4: 3, 6: 4 } },
+            2: { uid: 'gigwssj', slug: 'pzem004t-id23-2', panels: { 2: 1, 3: 2, 4: 3, 6: 4 } },
+            3: { uid: 'giqt444', slug: 'pzem004t-id23-3', panels: { 2: 1, 3: 2, 4: 3, 6: 4 } }
+        }
+    },
+    grafanaAvailable: false,
+
+    grafanaConfigured(stationId, field) {
+        var st = this.GRAFANA.stations[stationId];
+        return !!(st && st.uid && st.panels && st.panels[field]);
     },
 
-    // --- Fuentes de datos del monitoreo ---
-
-    localDownUntil: 0,       // mientras Date.now() < localDownUntil se usa directo el respaldo
-    localError:     '',
-
-    // Motivo por el que la red local no se puede usar desde esta página ('' = sí se puede)
-    localBlockedReason() {
-        // Un sitio https no puede consultar http://192.168... (contenido mixto)
-        if (location.protocol === 'https:') return 'la página se abrió por https; la integración local requiere abrirla por http dentro de la red';
-        if (Date.now() < this.localDownUntil) return this.localError;
-        return '';
+    grafanaChartUrl(stationId, field) {
+        var g = this.GRAFANA, st = g.stations[stationId];
+        return g.baseUrl + '/d-solo/' + encodeURIComponent(st.uid) + '/' + encodeURIComponent(st.slug || 'estacion') +
+            '?orgId=' + g.orgId + '&panelId=' + st.panels[field] +
+            '&theme=' + g.theme + '&refresh=' + g.refresh +
+            '&from=' + encodeURIComponent(g.from) + '&to=' + encodeURIComponent(g.to);
     },
 
-    fetchWithTimeout(url, ms) {
-        var ctrl  = new AbortController();
-        var timer = setTimeout(function() { ctrl.abort(); }, ms);
-        return fetch(url, { signal: ctrl.signal }).finally(function() { clearTimeout(timer); });
+    // Comprueba si el servidor de Grafana responde desde ESTE navegador (en una red Tailscale
+    // solo responde a equipos de la tailnet). Con no-cors la respuesta es opaca, pero basta para
+    // saber si hubo conexión; un fallo de red o el tiempo agotado cuentan como "no disponible".
+    probeGrafana() {
+        var self = this;
+        var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var timer = ctrl ? setTimeout(function() { ctrl.abort(); }, this.GRAFANA.probeTimeoutMs) : null;
+        return fetch(this.GRAFANA.baseUrl + '/api/health', { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+            .then(function() { self.grafanaAvailable = true; return true; })
+            .catch(function() { self.grafanaAvailable = false; return false; })
+            .then(function(ok) { if (timer) clearTimeout(timer); return ok; });
     },
 
-    // Última lectura de InfluxDB 1.x. El script de la Raspberry etiqueta cada punto con "id" = estación.
-    fetchInfluxReading(stationId) {
-        var id    = parseInt(stationId, 10);
-        var query = 'SELECT * FROM "' + this.LOCAL.measurement + '" WHERE "id" = \'' + id + '\' ORDER BY time DESC LIMIT 1';
-        var url   = this.LOCAL.influxUrl + '/query?db=' + encodeURIComponent(this.LOCAL.influxDb) + '&q=' + encodeURIComponent(query);
-        return this.fetchWithTimeout(url, this.LOCAL.timeoutMs)
-            .then(function(res) {
-                if (!res.ok) throw new Error('InfluxDB respondió ' + res.status);
-                return res.json();
-            })
-            .then(function(data) {
-                var series = data.results && data.results[0] && data.results[0].series && data.results[0].series[0];
-                if (!series || !series.values || !series.values.length) {
-                    throw new Error('InfluxDB no tiene lecturas de la estación ' + id);
-                }
-                var row = {};
-                series.columns.forEach(function(col, i) { row[col] = series.values[0][i]; });
-                return {
-                    source:     'grafana',
-                    time:       row.time,       // RFC3339 en UTC
-                    entryId:    null,
-                    voltaje:    App.numOrNull(row.voltaje),
-                    corriente:  App.numOrNull(row.corriente),
-                    potencia:   App.numOrNull(row.potencia),
-                    energia:    App.numOrNull(row.energia),
-                    frecuencia: App.numOrNull(row.frecuencia),
-                    fp:         App.numOrNull(row.factor_potencia)
-                };
-            });
+    // Elige la fuente de la gráfica: Grafana si responde y está configurada; si no, ThingSpeak.
+    chartSource(stationId, field) {
+        return (this.grafanaAvailable && this.grafanaConfigured(stationId, field)) ? 'grafana' : 'thingspeak';
     },
 
-    fetchThingSpeakReading(stationId) {
-        return fetch(this.tsFeedUrl(stationId))
-            .then(function(res) {
-                if (!res.ok) throw new Error('ThingSpeak respondió ' + res.status);
-                return res.json();
-            })
-            .then(function(d) {
-                if (!d || !d.created_at) throw new Error('ThingSpeak no tiene lecturas');
-                return {
-                    source:     'thingspeak',
-                    time:       d.created_at,
-                    entryId:    d.entry_id,
-                    voltaje:    App.numOrNull(d.field1),
-                    corriente:  App.numOrNull(d.field2),
-                    potencia:   App.numOrNull(d.field3),
-                    energia:    App.numOrNull(d.field4),
-                    frecuencia: App.numOrNull(d.field5),
-                    fp:         App.numOrNull(d.field6)
-                };
-            });
-    },
-
-    // Intenta Grafana/InfluxDB local; si falla, usa ThingSpeak. La lectura indica
-    // su fuente en `source` y, si se usó el respaldo, el motivo en `fallbackReason`.
-    fetchReading(stationId) {
-        var self    = this;
-        var t0      = performance.now();
-        var blocked = this.localBlockedReason();
-        var local   = blocked ? Promise.reject(new Error(blocked)) : this.fetchInfluxReading(stationId);
-        return local.catch(function(err) {
-            var reason = err.name === 'AbortError' ? 'la Raspberry Pi no respondió en ' + (self.LOCAL.timeoutMs / 1000) + ' s'
-                       : err.message === 'Failed to fetch' ? 'no se pudo conectar con la Raspberry Pi (¿misma red WiFi?)'
-                       : err.message;
-            if (!blocked) {
-                self.localDownUntil = Date.now() + self.LOCAL.retryMs;
-                self.localError     = reason;
-            }
-            return self.fetchThingSpeakReading(stationId).then(function(r) {
-                r.fallbackReason = reason;
-                return r;
-            });
-        }).then(function(r) {
-            r.fetchMs = Math.round(performance.now() - t0);   // duración de la consulta (incluye el respaldo)
-            return r;
-        });
-    },
-
-    numOrNull(x) {
-        var n = parseFloat(x);
-        return isNaN(n) ? null : n;
+    chartUrl(stationId, field, color, title, yaxis) {
+        return this.chartSource(stationId, field) === 'grafana'
+            ? this.grafanaChartUrl(stationId, field)
+            : this.tsChartUrl(stationId, field, color, title, yaxis);
     },
 
     logout() {
@@ -329,7 +265,7 @@ const App = {
     clockOffset: 0,          // hora_servidor - hora_navegador (ms)
     clockRtt:    null,       // ida y vuelta de la sincronización con Firestore (ms)
     clockSynced: false,
-    lastReadings: {},        // "estación:fuente" -> { entryId, time }
+    lastReadings: {},        // stationId -> { entryId, time }
 
     // Calcula el desfase del reloj local contra la hora del servidor de Firestore
     // (mismo principio que NTP: se compensa la mitad del tiempo de ida y vuelta).
@@ -355,14 +291,11 @@ const App = {
     },
 
     // Compara la marca de tiempo de una lectura con la hora del servidor y con
-    // la lectura anterior de la misma estación y fuente. Devuelve { level, message, age }.
-    // InfluxDB no tiene entry_id: en ese caso (entryId null) solo se compara la hora.
-    validateReading(stationId, createdAt, entryId, source) {
+    // la lectura anterior de la misma estación. Devuelve { level, message, age }.
+    validateReading(stationId, createdAt, entryId) {
         var rules = this.TIME_RULES;
         var time  = Date.parse(createdAt);
-        var key   = stationId + ':' + (source || 'thingspeak');
-        var prev  = this.lastReadings[key];
-        var hasId = entryId !== null && entryId !== undefined;
+        var prev  = this.lastReadings[stationId];
 
         if (isNaN(time)) {
             return { level: 'error', message: 'Marca de tiempo inválida' };
@@ -371,26 +304,24 @@ const App = {
         var age = this.serverNow() - time;
         var result;
 
-        if (prev && hasId && entryId < prev.entryId) {
+        if (prev && entryId < prev.entryId) {
             result = { level: 'error', message: 'Lectura fuera de orden (entry #' + entryId + ' < #' + prev.entryId + ')' };
-        } else if (prev && !hasId && time < prev.time) {
-            result = { level: 'error', message: 'Lectura fuera de orden: la hora retrocedió respecto a la anterior' };
-        } else if (prev && hasId && entryId > prev.entryId && time <= prev.time) {
+        } else if (prev && entryId > prev.entryId && time <= prev.time) {
             result = { level: 'error', message: 'Marca de tiempo no creciente respecto a la lectura anterior' };
         } else if (age < -rules.maxFutureSkew) {
             result = { level: 'error', message: 'Marca de tiempo en el futuro: revisar NTP del dispositivo' };
         } else if (age > rules.maxAge) {
             result = { level: 'warning', message: 'Sin datos recientes (hace ' + this.formatAge(age) + ')' };
-        } else if (prev && (hasId ? entryId === prev.entryId : time === prev.time)) {
+        } else if (prev && entryId === prev.entryId) {
             result = { level: 'ok', message: 'Sin lecturas nuevas desde la última consulta' };
         } else {
             result = { level: 'ok', message: 'Sincronizado (hace ' + this.formatAge(age) + ')' };
         }
 
         // Lectura que la página no había visto antes (sirve para medir la latencia solo una vez)
-        result.isNew = !prev || (hasId ? entryId !== prev.entryId : time !== prev.time);
+        result.isNew = !prev || entryId !== prev.entryId;
         if (result.level !== 'error') {
-            this.lastReadings[key] = { entryId: entryId, time: time };
+            this.lastReadings[stationId] = { entryId: entryId, time: time };
         }
         result.age = age;
         return result;
