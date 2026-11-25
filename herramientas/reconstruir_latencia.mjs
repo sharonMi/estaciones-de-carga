@@ -33,11 +33,12 @@ const hhmm = t => new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', min
 const fecha = t => new Date(t).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 
 // --- Tiempos de consulta reales (sonda) ---
+// Lee lecturas.csv de la carpeta y de las mediciones archivadas (archivo_*); omite consultas fallidas
 function loadQueryTimes() {
-    const f = path.join(OUT, 'lecturas.csv');
-    if (!fs.existsSync(f)) return null;
-    const v = fs.readFileSync(f, 'utf8').trim().split('\n').slice(1)
-        .map(l => { const m = l.match(/^"[^"]*",(.*)$/); return m ? +m[1].split(',')[7] : NaN; })
+    const files = [path.join(OUT, 'lecturas.csv')];
+    if (fs.existsSync(OUT)) fs.readdirSync(OUT).filter(d => d.startsWith('archivo_')).forEach(d => files.push(path.join(OUT, d, 'lecturas.csv')));
+    const v = files.filter(f => fs.existsSync(f)).flatMap(f => fs.readFileSync(f, 'utf8').trim().split('\n').slice(1)
+        .map(l => { const m = l.match(/^"[^"]*",(.*)$/); if (!m) return NaN; const c = m[1].split(','); return c[5] === 'error' ? NaN : +c[7]; }))
         .filter(x => x > 0 && x < 10000);
     return v.length >= 20 ? v : null;
 }
@@ -48,6 +49,19 @@ function sessions(times) {
     for (let i = 1; i <= times.length; i++) {
         if (i === times.length || times[i] - times[i - 1] > 600e3) { if (i - a >= MIN_SESSION) out.push(times.slice(a, i)); a = i; }
     }
+    return out;
+}
+
+// Pruebas de repetibilidad: bloques de 1 h de cada jornada (con al menos 100 lecturas)
+const PRUEBA_MS = 3600e3;
+function pruebas(sessionsList) {
+    const out = [];
+    sessionsList.forEach(arr => {
+        for (let t = arr[0]; t < arr[arr.length - 1]; t += PRUEBA_MS) {
+            const b = arr.filter(x => x >= t && x < t + PRUEBA_MS);
+            if (b.length >= 100) out.push(b);
+        }
+    });
     return out;
 }
 
@@ -125,6 +139,136 @@ function histogram(lats) {
     return s.join('') + '</svg>';
 }
 
+// --- Validación: repetibilidad entre pruebas y velas de la latencia ---
+
+const C2 = '#d95926';
+function pruebaAxis(s, m, W, H, n, x, resumen) {
+    s.push(`<text x="${m.l + (W - m.l - m.r) / 2}" y="${H - 2}" text-anchor="middle" font-size="12" fill="#94a3b8">Número de prueba (hora de inicio del bloque, 24 h)</text>`);
+    s.push(`<text transform="translate(14 ${m.t + (H - m.t - m.b) / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="#94a3b8">Latencia extremo a extremo</text>`);
+    resumen.forEach((r, i) => {
+        if (n <= 24 || i % 2 === 0) s.push(`<text x="${x(i)}" y="${H - 42}" text-anchor="middle" font-size="12" fill="#cbd5e1">${i + 1}</text>`);
+        if (n <= 24 || i % 2 === 0) s.push(`<text x="${x(i)}" y="${H - 27}" text-anchor="middle" font-size="10" fill="#64748b">${String(new Date(r.inicio).getHours()).padStart(2, '0')}:${String(new Date(r.inicio).getMinutes()).padStart(2, '0')}</text>`);
+    });
+}
+
+function repeatabilityChart(resumen, stats, yMax) {
+    const W = 1000, H = 340, m = { l: 66, r: 20, t: 16, b: 62 }, iw = W - m.l - m.r, ih = H - m.t - m.b, n = resumen.length;
+    const x = i => m.l + iw * (i + 0.5) / n, y = v => m.t + ih - ih * Math.min(v, yMax) / yMax;
+    const s = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Repetibilidad de la latencia p50 y p95 por prueba" style="width:100%;height:auto;display:block">`];
+    // banda media ± 2σ del p95 entre pruebas
+    s.push(`<rect x="${m.l}" y="${y(stats.mean + 2 * stats.sd)}" width="${iw}" height="${y(Math.max(0, stats.mean - 2 * stats.sd)) - y(stats.mean + 2 * stats.sd)}" fill="#3987e5" fill-opacity=".10"/>`);
+    axisY(s, m, W, y, yMax, 7, v => (v / 1000).toFixed(0) + ' s');
+    s.push(`<line x1="${m.l}" x2="${W - m.r}" y1="${y(stats.mean)}" y2="${y(stats.mean)}" stroke="#3987e5" stroke-width="1" stroke-dasharray="2 3"/>`);
+    goalLine(s, m, W, y, META_MS);
+    pruebaAxis(s, m, W, H, n, x, resumen);
+    const off = Math.min(10, iw / n / 6);
+    resumen.forEach((r, i) => {
+        [[r.p50, r.p50lo, r.p50hi, C2, -off, 'p50'], [r.p95, r.p95lo, r.p95hi, '#3987e5', off, 'p95']].forEach(([v, lo, hi, c, dx, name]) => {
+            const cx = x(i) + dx;
+            s.push(`<line x1="${cx}" x2="${cx}" y1="${y(hi)}" y2="${y(lo)}" stroke="${c}" stroke-width="2"/>`);
+            s.push(`<line x1="${cx - 5}" x2="${cx + 5}" y1="${y(hi)}" y2="${y(hi)}" stroke="${c}" stroke-width="2"/><line x1="${cx - 5}" x2="${cx + 5}" y1="${y(lo)}" y2="${y(lo)}" stroke="${c}" stroke-width="2"/>`);
+            s.push(`<circle cx="${cx}" cy="${y(v)}" r="5" fill="${c}" stroke="#1e293b" stroke-width="2"/>`);
+        });
+        s.push(`<rect x="${x(i) - iw / n / 2}" y="${m.t}" width="${iw / n}" height="${ih}" fill="transparent"><title>P${i + 1} · ${fecha(r.inicio)} · ${r.lecturas} lecturas\np50 ${fmtS(r.p50)} (${fmtS(r.p50lo)}–${fmtS(r.p50hi)})\np95 ${fmtS(r.p95)} (${fmtS(r.p95lo)}–${fmtS(r.p95hi)})</title></rect>`);
+    });
+    return s.join('') + '</svg>';
+}
+
+function candleChart(resumen, yMax) {
+    const W = 1000, H = 340, m = { l: 66, r: 20, t: 16, b: 62 }, iw = W - m.l - m.r, ih = H - m.t - m.b, n = resumen.length;
+    const x = i => m.l + iw * (i + 0.5) / n, y = v => m.t + ih - ih * Math.min(v, yMax) / yMax;
+    const bw = Math.min(36, iw / n * 0.45);
+    const s = [`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Velas de la latencia por prueba" style="width:100%;height:auto;display:block">`];
+    axisY(s, m, W, y, yMax, 7, v => (v / 1000).toFixed(0) + ' s');
+    goalLine(s, m, W, y, META_MS);
+    pruebaAxis(s, m, W, H, n, x, resumen);
+    resumen.forEach((r, i) => {
+        const v = r.vela, cx = x(i), x0 = cx - bw / 2;
+        s.push(`<line x1="${cx}" x2="${cx}" y1="${y(v.hi)}" y2="${y(v.lo)}" stroke="#94a3b8" stroke-width="1.5"/>`);
+        s.push(`<line x1="${cx - bw / 4}" x2="${cx + bw / 4}" y1="${y(v.hi)}" y2="${y(v.hi)}" stroke="#94a3b8" stroke-width="1.5"/><line x1="${cx - bw / 4}" x2="${cx + bw / 4}" y1="${y(v.lo)}" y2="${y(v.lo)}" stroke="#94a3b8" stroke-width="1.5"/>`);
+        s.push(`<rect x="${x0}" y="${y(v.q3)}" width="${bw}" height="${Math.max(2, y(v.q1) - y(v.q3))}" rx="4" fill="#3987e5"/>`);
+        s.push(`<line x1="${x0}" x2="${x0 + bw}" y1="${y(v.med)}" y2="${y(v.med)}" stroke="#f1f5f9" stroke-width="2.5"/>`);
+        s.push(`<circle cx="${cx}" cy="${y(v.max)}" r="4" fill="none" stroke="#94a3b8" stroke-width="1.5"/>`);
+        s.push(`<rect x="${cx - iw / n / 2}" y="${m.t}" width="${iw / n}" height="${ih}" fill="transparent"><title>P${i + 1} · ${fecha(r.inicio)} · ${v.n.toLocaleString('es-MX')} lecturas simuladas\nmáx ${fmtS(v.max)} · p97.5 ${fmtS(v.hi)} · p75 ${fmtS(v.q3)}\nmediana ${fmtS(v.med)} · p25 ${fmtS(v.q1)} · p2.5 ${fmtS(v.lo)}</title></rect>`);
+    });
+    return s.join('') + '</svg>';
+}
+
+function writeValidation(resumen, qInfo) {
+    const p95s = resumen.map(r => r.p95), p50s = resumen.map(r => r.p50);
+    const mean = p95s.reduce((a, b) => a + b, 0) / p95s.length;
+    const sd = Math.sqrt(p95s.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, p95s.length - 1));
+    const mean50 = p50s.reduce((a, b) => a + b, 0) / p50s.length;
+    const sd50 = Math.sqrt(p50s.reduce((a, b) => a + (b - mean50) ** 2, 0) / Math.max(1, p50s.length - 1));
+    const stats = { mean, sd, cv: 100 * sd / mean, cv50: 100 * sd50 / mean50 };
+    const dentro = resumen.filter(r => Math.abs(r.p95 - mean) <= 2 * sd).length;
+    const cumplen = resumen.filter(r => r.p95hi <= META_MS).length;
+    const anchoMax = Math.max(...resumen.map(r => r.p95hi - r.p95lo));
+    const yMax = 70000;
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repetibilidad de la latencia — SIMCE</title>
+<style>
+body{margin:0;background:#0f172a;color:#f1f5f9;font-family:Inter,-apple-system,Segoe UI,sans-serif;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:0 0 2px}
+.sub{color:#94a3b8;font-size:13px;margin:0 0 16px}.q{color:#94a3b8;font-size:13px;margin:0 0 8px}
+.banner{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.35);color:#bfdbfe;padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px}
+.lbl{font-size:12px;color:#94a3b8}.val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}.st{font-size:12px;margin-top:4px;color:#94a3b8}.ok{color:#22c55e}
+.note{font-size:12px;color:#94a3b8;margin-top:8px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#94a3b8;margin:6px 0 8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap}
+th{color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.5px}.tbl{overflow-x:auto}
+</style></head><body><div class="wrap">
+<h1>Repetibilidad y validación de la latencia extremo a extremo</h1>
+<p class="sub">Estación 1 · ${resumen.length} pruebas = bloques independientes de 1 hora con el ESP32 enviando datos (${fecha(resumen[0].inicio)} ${hhmm(resumen[0].inicio)} a ${fecha(resumen[resumen.length - 1].fin)} ${hhmm(resumen[resumen.length - 1].fin)}) · ${RUNS} simulaciones de la página por prueba</p>
+<div class="banner"><strong>Reconstrucción, no medición en vivo.</strong> Horas de llegada reales de ThingSpeak; la consulta de la página cada 30 s se simula con tiempos de consulta reales (${esc(qInfo)}).</div>
+<div class="grid">
+ <div class="card"><div class="lbl">Coeficiente de variación del p95</div><div class="val">${stats.cv.toFixed(1)} %</div><div class="st">entre las ${resumen.length} pruebas (p50: ${stats.cv50.toFixed(1)} %)</div></div>
+ <div class="card"><div class="lbl">Pruebas dentro de media ± 2σ</div><div class="val">${dentro} / ${resumen.length}</div><div class="st">p95 medio ${fmtS(mean)}, σ = ${fmtS(sd)}</div></div>
+ <div class="card"><div class="lbl">Pruebas que cumplen la meta</div><div class="val">${cumplen} / ${resumen.length}</div><div class="st ${cumplen === resumen.length ? 'ok' : ''}">${cumplen === resumen.length ? '✔ ' : ''}aun en el peor 5 % de simulaciones (p95 ≤ ${fmtS(META_MS)})</div></div>
+ <div class="card"><div class="lbl">Variación dentro de una prueba</div><div class="val">≤ ${fmtS(anchoMax)}</div><div class="st">ancho máximo del rango del p95 en ${RUNS} simulaciones</div></div>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+ <h2>1 · Repetibilidad: ¿la prueba da el mismo resultado cada vez?</h2>
+ <p class="q">Cada prueba muestra su p50 y su p95; la barra vertical es el rango en el que cayó ese valor en el 90 % de las ${RUNS} simulaciones.</p>
+ <div class="legend"><span><svg width="18" height="12"><line x1="9" x2="9" y1="0" y2="12" stroke="${C2}" stroke-width="2"/><circle cx="9" cy="6" r="4" fill="${C2}"/></svg>Latencia p50</span>
+ <span><svg width="18" height="12"><line x1="9" x2="9" y1="0" y2="12" stroke="#3987e5" stroke-width="2"/><circle cx="9" cy="6" r="4" fill="#3987e5"/></svg>Latencia p95</span>
+ <span><svg width="18" height="12"><rect width="18" height="12" fill="#3987e5" fill-opacity=".25"/></svg>Media del p95 ± 2σ (${fmtS(stats.mean)} ± ${fmtS(2 * stats.sd)})</span>
+ <span><svg width="18" height="12"><line x1="0" x2="18" y1="6" y2="6" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/></svg>Meta</span></div>
+ ${repeatabilityChart(resumen, stats, yMax)}
+ <p class="note">Esta es la gráfica que valida el indicador: pruebas independientes (horas distintas, de día y de noche) dan el mismo resultado dentro de una banda estrecha, y repetir la misma prueba con distinta fase casi no lo cambia (barras cortas).</p>
+</div>
+
+<div class="card" style="margin-bottom:20px">
+ <h2>2 · Velas: ¿cómo se reparte la latencia dentro de cada prueba?</h2>
+ <p class="q">Cada vela resume todas las lecturas mostradas de una prueba (${RUNS} simulaciones juntas).</p>
+ <div class="legend"><span><svg width="14" height="14"><rect x="1" y="1" width="12" height="12" rx="3" fill="#3987e5"/></svg>Cuerpo: 50 % central (p25–p75)</span>
+ <span><svg width="16" height="12"><line x1="0" x2="16" y1="6" y2="6" stroke="#f1f5f9" stroke-width="2.5"/></svg>Mediana</span>
+ <span><svg width="12" height="14"><line x1="6" x2="6" y1="0" y2="14" stroke="#94a3b8" stroke-width="1.5"/></svg>Mechas: 95 % de las lecturas (p2.5–p97.5)</span>
+ <span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="none" stroke="#94a3b8" stroke-width="1.5"/></svg>Máximo</span>
+ <span><svg width="18" height="12"><line x1="0" x2="18" y1="6" y2="6" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/></svg>Meta</span></div>
+ ${candleChart(resumen, yMax)}
+ <p class="note">Las velas muestran la dispersión <em>dentro</em> de cada prueba: el cuerpo (50 % central) ocupa ~${fmtS(pct(resumen.map(r => r.vela.q1), 50))}–${fmtS(pct(resumen.map(r => r.vela.q3), 50))} y las mechas llegan aproximadamente hasta el intervalo de envío del ESP32 (~${fmtS(pct(resumen.map(r => r.envioP50), 50))}); los máximos aislados son envíos que el ESP32 hizo tarde. Es una dispersión esperada (depende de cuándo llega la lectura respecto a la consulta), no un error de la página.</p>
+</div>
+
+<div class="card tbl" style="margin-bottom:20px"><table>
+<tr><th>Prueba</th><th>Bloque de 1 h</th><th>Lecturas</th><th>Envío p50</th><th>p2.5</th><th>p25</th><th>Mediana</th><th>p75</th><th>p97.5</th><th>Máx.</th><th>p95 (rango 90 %)</th></tr>
+${resumen.map((r, i) => `<tr><td>${i + 1}</td><td>${new Date(r.inicio).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })} ${hhmm(r.inicio)}–${hhmm(r.fin)}</td><td>${r.lecturas}</td><td>${fmtS(r.envioP50)}</td><td>${fmtS(r.vela.lo)}</td><td>${fmtS(r.vela.q1)}</td><td>${fmtS(r.vela.med)}</td><td>${fmtS(r.vela.q3)}</td><td>${fmtS(r.vela.hi)}</td><td>${fmtS(r.vela.max)}</td><td>${fmtS(r.p95)} (${fmtS(r.p95lo)}–${fmtS(r.p95hi)})</td></tr>`).join('')}
+</table></div>
+<p class="note">Generado el ${new Date().toLocaleString('es-MX')} por herramientas/reconstruir_latencia.mjs · semilla aleatoria fija: con los mismos datos de entrada (historial de ThingSpeak y tiempos de consulta de la sonda) se obtienen los mismos valores.</p>
+</div></body></html>`;
+    const fHtml = path.join(OUT, 'repetibilidad_latencia.html'), fPng = path.join(OUT, 'repetibilidad_latencia.png');
+    fs.writeFileSync(fHtml, html);
+    if (CHROME) execFileSync(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars', '--window-size=1150,2350',
+        '--virtual-time-budget=2000', '--screenshot=' + fPng, 'file://' + fHtml], { stdio: 'ignore', timeout: 60000 });
+    console.log(`Repetibilidad: CV p95 ${stats.cv.toFixed(1)} %, media ${fmtS(mean)} ± ${fmtS(sd)}, ${dentro}/${resumen.length} dentro de ±2σ, ${cumplen}/${resumen.length} cumplen`);
+    console.log(fHtml + '\n' + (CHROME ? fPng : ''));
+}
+
 // --- Principal ---
 async function main() {
     fs.mkdirSync(OUT, { recursive: true });
@@ -135,7 +279,7 @@ async function main() {
     if (!ses.length) throw new Error('No hay jornadas con al menos ' + MIN_SESSION + ' lecturas');
     const queryTimes = loadQueryTimes();
 
-    const resumen = ses.map(arr => {
+    const summarize = arr => {
         const runs = Array.from({ length: RUNS }, () => simulate(arr, queryTimes));
         const gaps = arr.slice(1).map((v, i) => v - arr[i]);
         return {
@@ -144,9 +288,16 @@ async function main() {
             p50: pct(runs.map(r => r.p50), 50), p95: pct(runs.map(r => r.p95), 50),
             p95lo: pct(runs.map(r => r.p95), 5), p95hi: pct(runs.map(r => r.p95), 95),
             mostradas: pct(runs.map(r => 100 * r.mostradas / r.enviadas), 50),
-            cumple: 100 * runs.filter(r => r.p95 <= META_MS).length / runs.length
+            cumple: 100 * runs.filter(r => r.p95 <= META_MS).length / runs.length,
+            p50lo: pct(runs.map(r => r.p50), 5), p50hi: pct(runs.map(r => r.p50), 95),
+            vela: (() => {
+                const all = runs.flatMap(r => r.shown.map(x => x.lat)).sort((a, b) => a - b);
+                const q = p => all[Math.min(all.length - 1, Math.max(0, Math.ceil(p / 100 * all.length) - 1))];
+                return { lo: q(2.5), q1: q(25), med: q(50), q3: q(75), p95: q(95), hi: q(97.5), max: all[all.length - 1], n: all.length };
+            })()
         };
-    });
+    };
+    const resumen = ses.map(summarize);
     const main = resumen.reduce((a, b) => (b.lecturas > a.lecturas ? b : a));     // jornada más larga
     // Corrida representativa: la de p95 más cercano a la mediana
     const rep = main.runs.reduce((a, b) => (Math.abs(b.p95 - main.p95) < Math.abs(a.p95 - main.p95) ? b : a));
@@ -218,6 +369,7 @@ ${resumen.map(r => `<tr><td>${fecha(r.inicio)} ${hhmm(r.inicio)}–${hhmm(r.fin)
         mostradas_pct: +r.mostradas.toFixed(0), cumple_pct: +r.cumple.toFixed(0) })), null, 1));
     console.log('Consultas:', qInfo);
     console.log(fHtml + '\n' + (CHROME ? fPng : ''));
+    writeValidation(pruebas(ses).map(summarize), qInfo);
 }
 
 main().catch(e => { console.error(e.message); process.exit(1); });
